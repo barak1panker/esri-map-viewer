@@ -1,0 +1,1272 @@
+{
+    "version": 8,
+    "metadata": {},
+    "sources": {
+        "data": {
+            "type": "geojson"
+        }
+    },
+    "layers": [
+        {
+            "id": "fill",
+            "type": "fill",
+            "source": "data",
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "fill"
+                ],
+                [
+                    "has",
+                    "icon_url"
+                ],
+                [
+                    "match",
+                    [
+                        "geometry-type"
+                    ],
+                    [
+                        "Polygon",
+                        "MultiPolygon"
+                    ],
+                    true,
+                    false
+                ]
+            ],
+            "layout": {},
+            "paint": {
+                "fill-pattern": [
+                    "get",
+                    "icon_url"
+                ],
+                "fill-opacity": [
+                    "case",
+                    [
+                        "==",
+                        [
+                            "get",
+                            "opacity",
+                            [
+                                "get",
+                                "fill"
+                            ]
+                        ],
+                        null
+                    ],
+                    1,
+                    [
+                        "get",
+                        "opacity",
+                        [
+                            "get",
+                            "fill"
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "line",
+            "type": "line",
+            "source": "data",
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "line"
+                ],
+                [
+                    "has",
+                    "icon_url"
+                ],
+                [
+                    "!=",
+                    [
+                        "geometry-type"
+                    ],
+                    "Point"
+                ]
+            ],
+            "layout": {},
+            "paint": {
+                "line-pattern": [
+                    "get",
+                    "icon_url"
+                ],
+                "line-width": [
+                    "get",
+                    "width",
+                    [
+                        "get",
+                        "line"
+                    ]
+                ],
+                "line-opacity": [
+                    "case",
+                    [
+                        "==",
+                        [
+                            "get",
+                            "opacity",
+                            [
+                                "get",
+                                "line"
+                            ]
+                        ],
+                        null
+                    ],
+                    1,
+                    [
+                        "get",
+                        "opacity",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "g-direction",
+            "type": "symbol",
+            "source": "data",
+            "minzoom": 14,
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "gDirection",
+                    [
+                        "get",
+                        "point"
+                    ]
+                ],
+                [
+                    "==",
+                    [
+                        "geometry-type"
+                    ],
+                    "Point"
+                ]
+            ],
+            "layout": {
+                "icon-image": "sprites/z/sdf/solid",
+                "icon-allow-overlap": true,
+                "icon-anchor": "center",
+                "symbol-placement": "point",
+                "icon-size": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    8,
+                    0.1,
+                    10,
+                    0.2,
+                    12,
+                    0.3,
+                    14,
+                    0.4
+                ],
+                "icon-offset": [
+                    60,
+                    0
+                ],
+                "icon-rotate": [
+                    "-",
+                    [
+                        "get",
+                        "gDirection",
+                        [
+                            "get",
+                            "point"
+                        ]
+                    ],
+                    90
+                ]
+            },
+            "paint": {
+                "icon-color": "#00eaea"
+            }
+        },
+        {
+            "id": "point-icon",
+            "type": "symbol",
+            "source": "data",
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "icon",
+                    [
+                        "get",
+                        "point"
+                    ]
+                ],
+                [
+                    "has",
+                    "icon_url"
+                ],
+                [
+                    "==",
+                    [
+                        "geometry-type"
+                    ],
+                    "Point"
+                ]
+            ],
+            "layout": {
+                "icon-image": [
+                    "get",
+                    "icon_url"
+                ],
+                "icon-size": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    8,
+                    0.1,
+                    10,
+                    0.2,
+                    12,
+                    0.3,
+                    14,
+                    0.4,
+                    16,
+                    0.5
+                ],
+                "symbol-placement": "point",
+                "icon-allow-overlap": true
+            },
+            "paint": {
+                "icon-opacity": [
+                    "case",
+                    [
+                        "==",
+                        [
+                            "get",
+                            "opacity",
+                            [
+                                "get",
+                                "icon",
+                                [
+                                    "get",
+                                    "point"
+                                ]
+                            ]
+                        ],
+                        null
+                    ],
+                    1,
+                    [
+                        "get",
+                        "opacity",
+                        [
+                            "get",
+                            "icon",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "line-up-text",
+            "type": "symbol",
+            "source": "data",
+            "minzoom": 8,
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "upText",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                [
+                    "==",
+                    [
+                        "geometry-type"
+                    ],
+                    "LineString"
+                ]
+            ],
+            "layout": {
+                "text-field": [
+                    "get",
+                    "upText",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                "text-font": [
+                    "open-sans-bold"
+                ],
+                "text-size": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    12,
+                    10,
+                    13,
+                    11,
+                    14,
+                    12,
+                    15,
+                    13,
+                    16,
+                    14,
+                    17,
+                    15,
+                    18,
+                    16
+                ],
+                "text-justify": "center",
+                "text-anchor": "center",
+                "text-allow-overlap": true,
+                "icon-allow-overlap": true,
+                "symbol-placement": "line",
+                "text-offset": [
+                    0,
+                    1.7
+                ]
+            },
+            "paint": {
+                "text-color": [
+                    "get",
+                    "color",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                "text-halo-color": [
+                    "get",
+                    "haloColor",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                "text-halo-width": [
+                    "get",
+                    "haloWidth",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "line-text",
+            "type": "symbol",
+            "source": "data",
+            "minzoom": 8,
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "text",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                [
+                    "==",
+                    [
+                        "geometry-type"
+                    ],
+                    "LineString"
+                ]
+            ],
+            "layout": {
+                "text-field": [
+                    "get",
+                    "text",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                "text-font": [
+                    "open-sans-bold"
+                ],
+                "text-size": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    12,
+                    10,
+                    13,
+                    11,
+                    14,
+                    12,
+                    15,
+                    13,
+                    16,
+                    14,
+                    17,
+                    15,
+                    18,
+                    16
+                ],
+                "text-justify": "center",
+                "text-anchor": "center",
+                "text-allow-overlap": true,
+                "icon-allow-overlap": true,
+                "symbol-placement": "line"
+            },
+            "paint": {
+                "text-color": [
+                    "get",
+                    "color",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                "text-halo-color": [
+                    "get",
+                    "haloColor",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                "text-halo-width": [
+                    "get",
+                    "haloWidth",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "line-down-text",
+            "type": "symbol",
+            "source": "data",
+            "minzoom": 8,
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "downText",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                [
+                    "==",
+                    [
+                        "geometry-type"
+                    ],
+                    "LineString"
+                ]
+            ],
+            "layout": {
+                "text-field": [
+                    "get",
+                    "downText",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                "text-font": [
+                    "open-sans-bold"
+                ],
+                "text-size": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    12,
+                    10,
+                    13,
+                    11,
+                    14,
+                    12,
+                    15,
+                    13,
+                    16,
+                    14,
+                    17,
+                    15,
+                    18,
+                    16
+                ],
+                "text-justify": "center",
+                "text-anchor": "center",
+                "text-allow-overlap": true,
+                "icon-allow-overlap": true,
+                "symbol-placement": "line",
+                "text-offset": [
+                    0,
+                    -1.7
+                ]
+            },
+            "paint": {
+                "text-color": [
+                    "get",
+                    "color",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                "text-halo-color": [
+                    "get",
+                    "haloColor",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ],
+                "text-halo-width": [
+                    "get",
+                    "haloWidth",
+                    [
+                        "get",
+                        "text",
+                        [
+                            "get",
+                            "line"
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "point-top-text",
+            "type": "symbol",
+            "source": "data",
+            "minzoom": 12,
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "top",
+                    [
+                        "get",
+                        "texts",
+                        [
+                            "get",
+                            "point"
+                        ]
+                    ]
+                ],
+                [
+                    "==",
+                    [
+                        "geometry-type"
+                    ],
+                    "Point"
+                ]
+            ],
+            "layout": {
+                "text-field": [
+                    "get",
+                    "text",
+                    [
+                        "get",
+                        "top",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-font": [
+                    "open-sans-bold"
+                ],
+                "text-offset": [
+                    0,
+                    -2
+                ],
+                "text-size": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    12,
+                    10,
+                    13,
+                    11,
+                    14,
+                    12,
+                    15,
+                    13,
+                    16,
+                    14,
+                    17,
+                    15,
+                    18,
+                    16
+                ],
+                "text-justify": "center",
+                "text-anchor": "bottom",
+                "text-allow-overlap": true
+            },
+            "paint": {
+                "text-color": [
+                    "get",
+                    "color",
+                    [
+                        "get",
+                        "top",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-halo-color": [
+                    "get",
+                    "haloColor",
+                    [
+                        "get",
+                        "top",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-halo-width": [
+                    "get",
+                    "haloWidth",
+                    [
+                        "get",
+                        "top",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "point-bottom-text",
+            "type": "symbol",
+            "source": "data",
+            "minzoom": 12,
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "bottom",
+                    [
+                        "get",
+                        "texts",
+                        [
+                            "get",
+                            "point"
+                        ]
+                    ]
+                ],
+                [
+                    "==",
+                    [
+                        "geometry-type"
+                    ],
+                    "Point"
+                ]
+            ],
+            "layout": {
+                "text-field": [
+                    "get",
+                    "text",
+                    [
+                        "get",
+                        "bottom",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-font": [
+                    "open-sans-bold"
+                ],
+                "text-offset": [
+                    0,
+                    2
+                ],
+                "text-size": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    12,
+                    10,
+                    13,
+                    11,
+                    14,
+                    12,
+                    15,
+                    13,
+                    16,
+                    14,
+                    17,
+                    15,
+                    18,
+                    16
+                ],
+                "text-justify": "center",
+                "text-anchor": "top",
+                "text-allow-overlap": true
+            },
+            "paint": {
+                "text-color": [
+                    "get",
+                    "color",
+                    [
+                        "get",
+                        "bottom",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-halo-color": [
+                    "get",
+                    "haloColor",
+                    [
+                        "get",
+                        "bottom",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-halo-width": [
+                    "get",
+                    "haloWidth",
+                    [
+                        "get",
+                        "bottom",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "point-right-text",
+            "type": "symbol",
+            "source": "data",
+            "minzoom": 12,
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "right",
+                    [
+                        "get",
+                        "texts",
+                        [
+                            "get",
+                            "point"
+                        ]
+                    ]
+                ],
+                [
+                    "==",
+                    [
+                        "geometry-type"
+                    ],
+                    "Point"
+                ]
+            ],
+            "layout": {
+                "text-field": [
+                    "get",
+                    "text",
+                    [
+                        "get",
+                        "right",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-font": [
+                    "open-sans-bold"
+                ],
+                "text-offset": [
+                    2,
+                    0
+                ],
+                "text-size": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    12,
+                    10,
+                    13,
+                    11,
+                    14,
+                    12,
+                    15,
+                    13,
+                    16,
+                    14,
+                    17,
+                    15,
+                    18,
+                    16
+                ],
+                "text-justify": "center",
+                "text-anchor": "left",
+                "text-allow-overlap": true
+            },
+            "paint": {
+                "text-color": [
+                    "get",
+                    "color",
+                    [
+                        "get",
+                        "right",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-halo-color": [
+                    "get",
+                    "haloColor",
+                    [
+                        "get",
+                        "right",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-halo-width": [
+                    "get",
+                    "haloWidth",
+                    [
+                        "get",
+                        "right",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "point-left-text",
+            "type": "symbol",
+            "source": "data",
+            "minzoom": 12,
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "left",
+                    [
+                        "get",
+                        "texts",
+                        [
+                            "get",
+                            "point"
+                        ]
+                    ]
+                ],
+                [
+                    "==",
+                    [
+                        "geometry-type"
+                    ],
+                    "Point"
+                ]
+            ],
+            "layout": {
+                "text-field": [
+                    "get",
+                    "text",
+                    [
+                        "get",
+                        "left",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-font": [
+                    "open-sans-bold"
+                ],
+                "text-offset": [
+                    -2,
+                    0
+                ],
+                "text-size": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    12,
+                    10,
+                    13,
+                    11,
+                    14,
+                    12,
+                    15,
+                    13,
+                    16,
+                    14,
+                    17,
+                    15,
+                    18,
+                    16
+                ],
+                "text-justify": "center",
+                "text-anchor": "right",
+                "text-allow-overlap": true
+            },
+            "paint": {
+                "text-color": [
+                    "get",
+                    "color",
+                    [
+                        "get",
+                        "left",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-halo-color": [
+                    "get",
+                    "haloColor",
+                    [
+                        "get",
+                        "left",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-halo-width": [
+                    "get",
+                    "haloWidth",
+                    [
+                        "get",
+                        "left",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ]
+            }
+        },
+        {
+            "id": "point-center-text",
+            "type": "symbol",
+            "source": "data",
+            "minzoom": 12,
+            "filter": [
+                "all",
+                [
+                    "has",
+                    "center",
+                    [
+                        "get",
+                        "texts",
+                        [
+                            "get",
+                            "point"
+                        ]
+                    ]
+                ],
+                [
+                    "==",
+                    [
+                        "geometry-type"
+                    ],
+                    "Point"
+                ]
+            ],
+            "layout": {
+                "text-field": [
+                    "get",
+                    "text",
+                    [
+                        "get",
+                        "center",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-font": [
+                    "open-sans-bold"
+                ],
+                "text-offset": [
+                    0,
+                    0
+                ],
+                "text-size": [
+                    "interpolate",
+                    [
+                        "linear"
+                    ],
+                    [
+                        "zoom"
+                    ],
+                    12,
+                    10,
+                    13,
+                    11,
+                    14,
+                    12,
+                    15,
+                    13,
+                    16,
+                    14,
+                    17,
+                    15,
+                    18,
+                    16
+                ],
+                "text-justify": "center",
+                "text-anchor": "center",
+                "text-allow-overlap": true
+            },
+            "paint": {
+                "text-color": [
+                    "get",
+                    "color",
+                    [
+                        "get",
+                        "center",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-halo-color": [
+                    "get",
+                    "haloColor",
+                    [
+                        "get",
+                        "center",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ],
+                "text-halo-width": [
+                    "get",
+                    "haloWidth",
+                    [
+                        "get",
+                        "center",
+                        [
+                            "get",
+                            "texts",
+                            [
+                                "get",
+                                "point"
+                            ]
+                        ]
+                    ]
+                ]
+            }
+        }
+    ]
+}

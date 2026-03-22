@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>eSitMap - ESRI Map Component</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/dark/main.css">
+  <script src="https://js.arcgis.com/4.29/"></script>
+  <style>
+    html, body { margin:0; padding:0; height:100%; width:100%; overflow:hidden; font-family:Arial,sans-serif; }
+    #viewDiv { position:absolute; top:0; left:0; width:100%; height:100%; }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      position:absolute; top:10px; right:10px; z-index:100;
+      background:rgba(18,20,36,.92); padding:12px 14px; border-radius:8px;
+      display:flex; flex-direction:column; gap:8px; min-width:270px;
+      color:white; border:1px solid rgba(255,255,255,.1); backdrop-filter:blur(6px);
+    }
+    #toolbar h3 { margin:0 0 2px 0; font-size:15px; color:#7eb8f7; letter-spacing:.4px; }
+    .toolbar-row { display:flex; gap:6px; align-items:center; }
+    .btn {
+      background:rgba(255,255,255,.1); color:#bbb;
+      border:1px solid rgba(255,255,255,.18); padding:5px 14px;
+      border-radius:4px; cursor:pointer; font-size:13px; transition:background .15s,color .15s;
+    }
+    .btn:hover  { background:rgba(255,255,255,.22); color:white; }
+    .btn.active { background:#2196F3; color:white; border-color:#2196F3; }
+    .btn-load   { background:#27ae60; color:white; border-color:#27ae60; white-space:nowrap; }
+    .btn-load:hover { background:#1e8449; }
+    .btn-edit   { background:#8e44ad; color:white; border-color:#8e44ad; }
+    .btn-edit.active { background:#6c3483; }
+    .btn-danger { background:#c0392b; color:white; border-color:#c0392b; white-space:nowrap; }
+    .btn-danger:hover { background:#a93226; }
+    .btn-export { background:#16a085; color:white; border-color:#16a085; white-space:nowrap; }
+    .btn-export:hover { background:#1abc9c; }
+
+    input[type="text"] {
+      background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.18);
+      border-radius:4px; color:white; padding:5px 8px; font-size:12px; flex:1; min-width:0;
+    }
+    input[type="text"]::placeholder { color:rgba(255,255,255,.28); }
+    input[type="file"] { color:#999; font-size:11px; flex:1; }
+    .divider { border-top:1px solid rgba(255,255,255,.09); }
+    #status { font-size:11px; color:#888; min-height:14px; line-height:1.4; }
+    #status.error { color:#e74c3c; }
+    #status.ok    { color:#2ecc71; }
+    label { font-size:12px; color:#888; white-space:nowrap; }
+
+    /* ── Sketch widget host ── */
+    #sketchContainer {
+      position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+      z-index:100; display:none;
+    }
+    #sketchContainer.visible { display:block; }
+
+    /* ── Edit draw buttons (above sketch) ── */
+    #editBar {
+      position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+      z-index:101; display:none; gap:6px;
+      background:rgba(18,20,36,.9); padding:8px 12px; border-radius:8px;
+      border:1px solid rgba(255,255,255,.1);
+    }
+    #editBar.visible { display:flex; }
+    #editBar .eBtn {
+      background:rgba(255,255,255,.1); color:#ccc;
+      border:1px solid rgba(255,255,255,.2); padding:6px 12px;
+      border-radius:4px; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:4px;
+    }
+    #editBar .eBtn:hover { background:rgba(255,255,255,.22); color:white; }
+    #editBar .eBtn.active { background:#8e44ad; color:white; border-color:#8e44ad; }
+    #editBar .eBtn-delete.active { background:#c0392b; border-color:#c0392b; }
+    /* crosshair cursor while in delete / arrow-draw mode */
+    body.delete-mode #viewDiv,
+    body.arrow-draw-mode #viewDiv { cursor:crosshair; }
+
+    /* My-location button pulse */
+    @keyframes pulse-loc {
+      0%   { box-shadow:0 0 0 0 rgba(0,122,255,.65); }
+      70%  { box-shadow:0 0 0 7px rgba(0,122,255,0); }
+      100% { box-shadow:0 0 0 0 rgba(0,122,255,0); }
+    }
+    .btn-location.active { background:#007aff; border-color:#007aff; color:white; animation:pulse-loc 2s infinite; }
+
+    /* ── Properties Modal ── */
+    #propsModal {
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      z-index:200; background:rgba(15,17,32,.97); border:1px solid rgba(255,255,255,.15);
+      border-radius:10px; padding:18px 20px; width:380px; max-height:85vh;
+      overflow-y:auto; color:white; display:none; backdrop-filter:blur(8px);
+    }
+    #propsModal.visible { display:block; }
+    #propsModal h4 { margin:0 0 14px 0; font-size:15px; color:#7eb8f7; }
+
+    .form-section { margin-bottom:14px; }
+    .form-section > .sec-label {
+      font-size:11px; font-weight:bold; color:#7eb8f7; text-transform:uppercase;
+      letter-spacing:.5px; margin-bottom:6px;
+    }
+    .form-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+    .form-row label { font-size:12px; color:#aaa; min-width:70px; }
+    .form-row input[type="text"],
+    .form-row input[type="number"] {
+      background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18);
+      border-radius:4px; color:white; padding:4px 7px; font-size:12px; flex:1;
+    }
+    .form-row input[type="range"] { flex:1; accent-color:#8e44ad; }
+    .form-row input[type="number"] { width:60px; flex:none; }
+    .form-row input[type="color"] {
+      width:32px; height:26px; border:1px solid rgba(255,255,255,.2);
+      border-radius:3px; cursor:pointer; background:none; padding:1px;
+    }
+
+    /* Icon grid */
+    .icon-grid { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+    .icon-opt {
+      width:40px; height:40px; border:2px solid rgba(255,255,255,.15);
+      border-radius:6px; cursor:pointer; overflow:hidden;
+      display:flex; align-items:center; justify-content:center;
+      transition:border-color .15s;
+    }
+    .icon-opt:hover  { border-color:rgba(255,255,255,.5); }
+    .icon-opt.sel    { border-color:#8e44ad; box-shadow:0 0 0 2px #8e44ad44; }
+    .icon-opt img    { width:32px; height:32px; }
+
+    .modal-footer { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,.1); }
+    .modal-footer .btn { padding:6px 18px; }
+    .btn-confirm { background:#27ae60; color:white; border-color:#27ae60; }
+    .btn-confirm:hover { background:#1e8449; }
+
+    /* text position grid */
+    .pos-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .pos-group { background:rgba(255,255,255,.04); border-radius:6px; padding:8px; }
+    .pos-group .pos-name { font-size:10px; color:#999; margin-bottom:4px; }
+    .pos-group input[type="text"]  { width:100%; box-sizing:border-box; margin-bottom:4px; }
+    .pos-group .color-row { display:flex; gap:4px; align-items:center; font-size:11px; color:#888; }
+
+    /* Coordinate bar */
+    #coordBar {
+      position:absolute; bottom:0; left:0; right:0; z-index:99;
+      background:rgba(8,10,20,.78); color:#8dd; font-size:12px;
+      font-family:monospace; padding:4px 14px; text-align:center;
+      pointer-events:auto; cursor:copy; user-select:none;
+      border-top:1px solid rgba(255,255,255,.06); letter-spacing:.3px;
+      display:flex; justify-content:center; align-items:center; gap:14px;
+    }
+    #coordBar:hover { background:rgba(20,30,55,.9); color:#aef; }
+    #coordBar .cb-hint { font-size:9px; color:#446; }
+    #coordBar .cb-val  { min-width:260px; }
+
+    /* Waypoint select */
+    select.wp-select {
+      background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.18);
+      border-radius:4px; color:white; padding:5px 6px; font-size:12px; flex:1; min-width:0;
+    }
+    select.wp-select option, select.wp-select optgroup { background:#1a1c2e; color:white; }
+  </style>
+</head>
+<body>
+  <div id="viewDiv"></div>
+
+  <!-- ── Main toolbar ── -->
+  <div id="toolbar">
+    <h3>eSitMap · ESRI</h3>
+    <div class="toolbar-row">
+      <button class="btn active" id="btn2d">2D</button>
+      <button class="btn"        id="btn3d">3D</button>
+      <button class="btn btn-edit" id="btnEdit">✏ עריכה</button>
+      <button class="btn btn-location" id="btnMyLocation" title="מיקום עצמי (מתעדכן כל 30 שניות)">📍</button>
+    </div>
+    <div class="divider"></div>
+    <label>טעינה מ-URL:</label>
+    <div class="toolbar-row">
+      <input type="text" id="geojsonUrl" placeholder="https://...geojson">
+      <button class="btn btn-load" id="loadUrl">טען</button>
+    </div>
+    <label>קובץ מקומי:</label>
+    <div class="toolbar-row">
+      <input type="file" id="geojsonFile" accept=".json,.geojson">
+    </div>
+    <div id="editExportRow" class="toolbar-row" style="display:none">
+      <button class="btn btn-export" id="btnExport">⬇ ייצוא GeoJSON</button>
+      <button class="btn btn-danger" id="btnUndoLast">↩ בטל אחרון</button>
+    </div>
+    <div id="rotateHint" style="font-size:10px;color:#666;line-height:1.5">
+      ⤵ סיבוב: Shift + גרירה<br>🧭 לחיצה על מצפן → איפוס צפון
+    </div>
+    <div class="divider"></div>
+    <label>קפיצה לנקודת ציון:</label>
+    <div class="toolbar-row">
+      <select id="waypointSelect" class="wp-select">
+        <optgroup label="ישובים">
+          <option value="35.217,31.771,13">ירושלים</option>
+          <option value="34.780,32.085,13">תל אביב</option>
+          <option value="34.989,32.794,13">חיפה</option>
+          <option value="34.798,31.252,13">באר שבע</option>
+          <option value="34.951,29.558,13">אילת</option>
+          <option value="35.496,32.848,13">טבריה</option>
+          <option value="34.466,31.517,13">אשקלון</option>
+          <option value="35.292,32.664,13">נצרת</option>
+          <option value="34.856,32.441,13">כפר סבא</option>
+          <option value="35.008,32.459,13">אריאל</option>
+        </optgroup>
+        <optgroup label="כל הארץ" id="waypointIsraelGroup">
+          <option value="35.0,31.5,8">כל ישראל</option>
+        </optgroup>
+        <optgroup label="פיצ'רים טעונים" id="waypointFeaturesGroup"></optgroup>
+      </select>
+      <button class="btn btn-load" id="btnJump">קפוץ</button>
+    </div>
+    <div class="toolbar-row" style="gap:4px">
+      <input type="text" id="coordInput" placeholder="קו רוחב, קו אורך  (32.08, 34.78)" style="flex:1;font-size:11px">
+      <button class="btn btn-load" id="btnJumpCoord" style="white-space:nowrap">קפוץ לקואורד'</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <!-- ── Coordinate bar (bottom, full-width) ── -->
+  <div id="coordBar">
+    <span class="cb-hint">לחץ להעתקה לשדה הקפיצה</span>
+    <span class="cb-val">—</span>
+  </div>
+
+  <!-- ── Edit draw bar (bottom center) ── -->
+  <div id="editBar">
+    <button class="eBtn" id="drawPoint">📍 נקודה</button>
+    <button class="eBtn" id="drawLine">〰 קו</button>
+    <button class="eBtn" id="drawPolygon">⬡ פוליגון</button>
+    <button class="eBtn" id="drawArrow">🏹 חץ</button>
+    <div style="width:1px;background:rgba(255,255,255,.2);margin:0 2px"></div>
+    <button class="eBtn" id="drawEditFeature">✏ ערוך</button>
+    <button class="eBtn eBtn-delete" id="drawDelete">🗑 מחק</button>
+  </div>
+
+  <!-- ── Properties modal ── -->
+  <div id="propsModal">
+    <h4 id="modalTitle">הוסף פיצ'ר</h4>
+
+    <!-- ── POINT FIELDS ── -->
+    <div id="pointFields">
+      <div class="form-section">
+        <div class="sec-label">אייקון</div>
+        <div class="icon-grid" id="iconGrid"></div>
+        <input type="text" id="customIconUrl" placeholder="או הכנס URL / data-URL של אייקון...">
+      </div>
+
+      <div class="form-section">
+        <div class="sec-label">כיוון (gDirection)</div>
+        <div class="form-row">
+          <input type="range"  id="gDirSlider" min="0" max="360" value="0" style="flex:1">
+          <input type="number" id="gDirNum"    min="0" max="360" value="0" style="width:55px">
+          <span style="font-size:11px;color:#aaa">°</span>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="sec-label">תוויות</div>
+        <div class="pos-grid">
+          <div class="pos-group">
+            <div class="pos-name">למעלה (top)</div>
+            <input type="text" id="topText" placeholder="טקסט...">
+            <div class="color-row">צבע: <input type="color" id="topColor" value="#ffffff"> הילה: <input type="color" id="topHalo" value="#000000"></div>
+          </div>
+          <div class="pos-group">
+            <div class="pos-name">למטה (bottom)</div>
+            <input type="text" id="botText" placeholder="טקסט...">
+            <div class="color-row">צבע: <input type="color" id="botColor" value="#ffffff"> הילה: <input type="color" id="botHalo" value="#000000"></div>
+          </div>
+          <div class="pos-group">
+            <div class="pos-name">שמאל (left)</div>
+            <input type="text" id="leftText" placeholder="טקסט...">
+            <div class="color-row">צבע: <input type="color" id="leftColor" value="#ffffff"> הילה: <input type="color" id="leftHalo" value="#000000"></div>
+          </div>
+          <div class="pos-group">
+            <div class="pos-name">ימין (right)</div>
+            <input type="text" id="rightText" placeholder="טקסט...">
+            <div class="color-row">צבע: <input type="color" id="rightColor" value="#ffffff"> הילה: <input type="color" id="rightHalo" value="#000000"></div>
+          </div>
+          <div class="pos-group" style="grid-column:1/-1">
+            <div class="pos-name">מרכז (center)</div>
+            <input type="text" id="centerText" placeholder="טקסט...">
+            <div class="color-row">צבע: <input type="color" id="centerColor" value="#ffffff"> הילה: <input type="color" id="centerHalo" value="#000000"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LINE FIELDS ── -->
+    <div id="lineFields" style="display:none">
+      <div class="form-section">
+        <div class="sec-label">סגנון קו</div>
+        <div class="form-row"><label>עובי:</label><input type="range" id="lineWidth" min="1" max="10" value="2"><input type="number" id="lineWidthNum" min="1" max="10" value="2" style="width:45px"></div>
+        <div class="form-row"><label>שקיפות:</label><input type="range" id="lineOpacity" min="0" max="1" step="0.05" value="1"><input type="number" id="lineOpacityNum" min="0" max="1" step="0.05" value="1" style="width:50px"></div>
+      </div>
+      <div class="form-section">
+        <div class="sec-label">תוויות</div>
+        <div class="form-row"><label>על הקו:</label><input type="text" id="lineText" placeholder="טקסט..."><input type="color" id="lineTextColor" value="#00eaea"></div>
+        <div class="form-row"><label>מעל:</label><input type="text" id="lineUpText" placeholder="טקסט..."></div>
+        <div class="form-row"><label>מתחת:</label><input type="text" id="lineDownText" placeholder="טקסט..."></div>
+        <div class="form-row"><label>הילה:</label><input type="color" id="lineHaloColor" value="#000000"><span style="font-size:11px;color:#888;margin-right:6px">רוחב:</span><input type="number" id="lineHaloWidth" min="0" max="5" step="0.5" value="1.5" style="width:50px"></div>
+      </div>
+    </div>
+
+    <!-- ── POLYGON FIELDS ── -->
+    <div id="polyFields" style="display:none">
+      <div class="form-section">
+        <div class="sec-label">אייקון (fill pattern)</div>
+        <div class="icon-grid" id="iconGridPoly"></div>
+        <input type="text" id="polyIconUrl" placeholder="URL של תבנית (SVG / PNG)...">
+      </div>
+      <div class="form-section">
+        <div class="sec-label">שקיפות</div>
+        <div class="form-row"><input type="range" id="fillOpacity" min="0" max="1" step="0.05" value="0.4"><input type="number" id="fillOpacityNum" min="0" max="1" step="0.05" value="0.4" style="width:55px"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn" id="cancelFeature">ביטול</button>
+      <button class="btn btn-confirm" id="confirmFeature">✓ הוסף</button>
+    </div>
+  </div>
+
+  <script>
+  require([
+    "esri/Map",
+    "esri/views/MapView",
+    "esri/views/SceneView",
+    "esri/layers/FeatureLayer",
+    "esri/layers/GraphicsLayer",
+    "esri/layers/GroupLayer",
+    "esri/layers/SceneLayer",
+    "esri/Graphic",
+    "esri/geometry/Point",
+    "esri/geometry/Polyline",
+    "esri/geometry/Polygon",
+    "esri/geometry/Extent",
+    "esri/geometry/SpatialReference",
+    "esri/geometry/support/webMercatorUtils",
+    "esri/widgets/Sketch",
+    "esri/widgets/Compass",
+    "esri/widgets/NavigationToggle",
+    "esri/widgets/Home",
+  ], function(
+    Map, MapView, SceneView,
+    FeatureLayer, GraphicsLayer, GroupLayer, SceneLayer,
+    Graphic, Point, Polyline, Polygon, Extent, SpatialReference,
+    webMercatorUtils, Sketch, Compass, NavigationToggle, Home
+  ) {
+
+    const SR_WGS84 = new SpatialReference({ wkid: 4326 });
+
+    // Israel + immediate neighbors bounding box
+    const ISRAEL_REGION = new Extent({
+      xmin: 33.5, ymin: 27.5, xmax: 38.5, ymax: 34.5,
+      spatialReference: SR_WGS84,
+    });
+
+    // ── Preset icons ─────────────────────────────────────────────────────────
+    const ICONS = [
+      { id:"circle-red",    url:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='16' fill='%23e74c3c' stroke='white' stroke-width='2'/%3E%3C/svg%3E" },
+      { id:"triangle-green",url:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpolygon points='20%2C4 36%2C36 4%2C36' fill='%232ecc71' stroke='white' stroke-width='2'/%3E%3C/svg%3E" },
+      { id:"square-blue",   url:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='4' y='4' width='32' height='32' rx='4' fill='%233498db' stroke='white' stroke-width='2'/%3E%3C/svg%3E" },
+      { id:"star-yellow",   url:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpolygon points='20%2C3 25%2C14 38%2C14 28%2C22 32%2C34 20%2C27 8%2C34 12%2C22 2%2C14 15%2C14' fill='%23f39c12' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E" },
+      { id:"dot-purple",    url:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='16' fill='%239b59b6' stroke='white' stroke-width='2'/%3E%3Ccircle cx='20' cy='20' r='6' fill='white'/%3E%3C/svg%3E" },
+      { id:"diamond-orange",url:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpolygon points='20%2C3 37%2C20 20%2C37 3%2C20' fill='%23e67e22' stroke='white' stroke-width='2'/%3E%3C/svg%3E" },
+    ];
+
+    // ── Build icon grids ──────────────────────────────────────────────────────
+    function buildIconGrid(containerId, inputId) {
+      const grid = document.getElementById(containerId);
+      ICONS.forEach(icon => {
+        const el = document.createElement("div");
+        el.className = "icon-opt";
+        el.dataset.url = icon.url;
+        el.innerHTML = `<img src="${icon.url}" alt="">`;
+        el.onclick = () => {
+          grid.querySelectorAll(".icon-opt").forEach(e => e.classList.remove("sel"));
+          el.classList.add("sel");
+          document.getElementById(inputId).value = icon.url;
+        };
+        grid.appendChild(el);
+      });
+      // select first by default
+      grid.querySelector(".icon-opt").click();
+    }
+    buildIconGrid("iconGrid",     "customIconUrl");
+    buildIconGrid("iconGridPoly", "polyIconUrl");
+
+    // ── Map (shared between both views) ──────────────────────────────────────
+    const map         = new Map({ basemap: "satellite", ground: "world-elevation" });
+    // Exaggerate elevation so Israel's mountains (Golan, Galilee, Judean hills) look dramatic in 3D
+    map.ground.exaggeration = 2;
+    const sketchLayer = new GraphicsLayer({ title: "_sketch" });
+    map.add(sketchLayer);
+
+    // ── OSM 3D Buildings (SceneLayer, visible only in SceneView) ─────────────
+    const buildingsLayer = new SceneLayer({
+      url: "https://basemaps3d.arcgis.com/arcgis/rest/services/OpenStreetMap3D_Buildings_v1/SceneServer",
+      title: "בניינים 3D",
+      visible: false,
+      popupEnabled: false,
+      renderer: {
+        type: "simple",
+        symbol: {
+          type: "mesh-3d",
+          symbolLayers: [{
+            type: "fill",
+            material: { color: [210, 200, 185, 1], colorMixMode: "replace" },
+            edges: { type: "solid", color: [100, 95, 85, 0.7], size: 0.5 }
+          }]
+        }
+      }
+    });
+    map.add(buildingsLayer);
+
+    // ── Self-location layer (always on top, persists across 2D/3D switch) ─────
+    const locationLayer = new GraphicsLayer({ title: "_location", listMode: "hide" });
+    map.add(locationLayer);
+
+    let is3D          = false;
+    let editMode      = false;
+    let deleteMode    = false;
+    let editFeatureMode = false;
+    let editingFeatureIdx = null;
+    let clickHandle   = null;
+    let sketchWidget  = null;
+    let pendingGeom   = null;
+    let pendingType   = null;
+    let currentGeoJSON = null;
+    const iconCache   = {};
+    // Self-location state
+    let locationActive     = false;
+    let locationIntervalId = null;
+
+    // Arrow drag-draw state
+    let arrowDrawMode    = false;
+    let arrowStart       = null;   // map Point at drag start
+    let arrowStartPx     = null;   // screen {x,y} at drag start
+    let arrowDrawHandles = [];     // event handles to remove on stop
+
+    // ── Create both views (ESRI pattern: share one container via container reassignment) ──
+    // Both views start with container:null so they don't try to render off-screen
+    const mapView2D = new MapView({
+      container: null,          // attached below
+      map,
+      center: [35.0, 31.5],
+      zoom: 8,
+      constraints: {
+        rotationEnabled: true,
+        geometry: ISRAEL_REGION,
+        minZoom: 6,
+      },
+    });
+
+    const sceneView3D = new SceneView({
+      container: null,          // attached when user switches to 3D
+      map,
+      camera: {
+        position: { longitude: 35.2, latitude: 30.5, z: 120000 },
+        tilt: 62,
+        heading: 345,           // slight N-NW view to show terrain depth
+      },
+      constraints: {
+        geometry: ISRAEL_REGION,
+      },
+    });
+
+    // Activate 2D first
+    mapView2D.container = "viewDiv";
+
+    // Active view reference (starts as 2D)
+    let view = mapView2D;
+
+    // Add widgets when each view is ready
+    mapView2D.when(() => {
+      mapView2D.ui.add(new Compass({ view: mapView2D }), "bottom-right");
+      mapView2D.ui.add(new Home({ view: mapView2D }),    "top-left");
+    });
+    sceneView3D.when(() => {
+      sceneView3D.ui.add(new Compass({ view: sceneView3D }),           "bottom-right");
+      sceneView3D.ui.add(new Home({ view: sceneView3D }),              "top-left");
+      sceneView3D.ui.add(new NavigationToggle({ view: sceneView3D }), "top-left");
+      // Atmosphere & lighting (set after ready, not in constructor)
+      sceneView3D.environment = {
+        atmosphere: { quality: "high" },
+        lighting:   { date: new Date(), cameraTrackingEnabled: true },
+      };
+    });
+
+    // ── Switch between 2D and 3D (ESRI recommended: reassign container) ───────
+    async function activateView(use3D) {
+      const from = use3D ? mapView2D  : sceneView3D;
+      const to   = use3D ? sceneView3D : mapView2D;
+
+      // Sync position before switching
+      try {
+        if (use3D) {
+          const c = from.center;
+          const zoom = from.zoom || 8;
+          // Convert 2D zoom → 3D altitude: generous enough to see terrain relief
+          const alt = zoom >= 14 ? 1500 : zoom >= 12 ? 5000 : zoom >= 10 ? 15000 : zoom >= 8 ? 40000 : 80000;
+          to.camera = {
+            position: { longitude: c.longitude, latitude: c.latitude, z: alt },
+            tilt: 65, heading: 0,
+          };
+        } else {
+          const cam = from.camera.position;
+          to.center = [cam.longitude, cam.latitude];
+          to.zoom = from.zoom || 8;
+        }
+      } catch {}
+
+      // Transfer the container (the ESRI-approved way to switch views)
+      from.container = null;
+      to.container   = "viewDiv";
+
+      view = to;
+      is3D = use3D;
+      // Buildings auto-follow 3D mode — no extra button needed
+      buildingsLayer.visible = use3D;
+      bindPointerMove();   // rebind coordinate tracking to new active view
+
+      // Cancel any open modal / pending draw when switching views
+      if (document.getElementById("propsModal").classList.contains("visible")) {
+        hideModal();
+        sketchLayer.removeAll();
+      }
+
+      // Rebind Sketch / delete-click / edit-feature / arrow-draw to the newly active view
+      if (editMode)        createSketch();
+      if (deleteMode)      { exitDeleteMode(); enterDeleteMode(); }
+      if (arrowDrawMode)   { stopArrowDraw(); document.getElementById("drawArrow").classList.add("active"); startArrowDraw(); }
+      if (editFeatureMode) {
+        if (clickHandle) { clickHandle.remove(); clickHandle = null; }
+        clickHandle = view.on("click", handleEditFeatureClick);
+      }
+      // Rebuild layers with correct 2D/3D renderer
+      if (currentGeoJSON) await loadGeoJSON(currentGeoJSON, /*skipGoTo*/ true);
+    }
+
+    // ── Sketch widget ─────────────────────────────────────────────────────────
+    function createSketch() {
+      if (sketchWidget) { sketchWidget.destroy(); sketchWidget = null; }
+      sketchWidget = new Sketch({
+        view,
+        layer: sketchLayer,
+        creationMode: "single",
+        visibleElements: {
+          createTools:   { point:false, polyline:false, polygon:false, rectangle:false, circle:false },
+          selectionTools:{ "rectangle-selection":false, "lasso-selection":false },
+          settingsMenu:  false,
+          undoRedoMenu:  false,
+        },
+      });
+
+      sketchWidget.on("create", evt => {
+        if (evt.state !== "complete") return;
+        pendingGeom = evt.graphic.geometry;
+        pendingType = pendingGeom.type === "polyline" ? "polyline" : pendingGeom.type;
+        sketchLayer.removeAll();
+        showModal(pendingType);
+      });
+    }
+
+    // ── Delete mode ───────────────────────────────────────────────────────────
+
+    // Layer title → GeoJSON geometry type
+    const LAYER_GEOM = { "נקודות":"Point", "קווים":"LineString", "פוליגונים":"Polygon" };
+
+    function enterDeleteMode() {
+      deleteMode = true;
+      document.body.classList.add("delete-mode");
+      document.getElementById("drawDelete").classList.add("active");
+      // cancel any active sketch tool
+      if (sketchWidget) sketchWidget.cancel();
+      document.querySelectorAll("#editBar .eBtn:not(.eBtn-delete)").forEach(b => b.classList.remove("active"));
+
+      // remove previous listener if any
+      if (clickHandle) { clickHandle.remove(); clickHandle = null; }
+
+      clickHandle = view.on("click", async evt => {
+        if (!deleteMode) return;
+        const hit = await view.hitTest(evt, {
+          include: [...map.layers].filter(l => l.title === "eSitMap").flatMap(g => [...g.layers])
+        });
+        const res = hit.results.find(r => r.graphic?.layer?.title in LAYER_GEOM);
+        if (!res) return;
+
+        const geomType = LAYER_GEOM[res.graphic.layer.title];
+        const oid      = res.graphic.attributes?.OBJECTID;
+        if (oid === undefined || oid === null) return;
+
+        // OBJECTID = index within the filtered subset (pts / lns / poly)
+        // Find the oid-th feature of matching type in currentGeoJSON
+        let counter = -1;
+        const idx = currentGeoJSON.features.findIndex(f => {
+          if (f.geometry?.type === geomType) { counter++; return counter === oid; }
+          return false;
+        });
+        if (idx === -1) return;
+
+        currentGeoJSON.features.splice(idx, 1);
+        setStatus(`נמחק פיצ'ר (${geomType})`);
+        loadGeoJSON(currentGeoJSON);
+      });
+    }
+
+    function exitDeleteMode() {
+      deleteMode = false;
+      document.body.classList.remove("delete-mode");
+      document.getElementById("drawDelete").classList.remove("active");
+      if (clickHandle) { clickHandle.remove(); clickHandle = null; }
+    }
+
+    document.getElementById("drawDelete").onclick = () => {
+      if (deleteMode) { exitDeleteMode(); return; }
+      exitEditFeatureMode();
+      stopArrowDraw();
+      enterDeleteMode();
+    };
+    document.getElementById("drawEditFeature").onclick = () => {
+      if (editFeatureMode) { exitEditFeatureMode(); return; }
+      enterEditFeatureMode();
+    };
+
+    // ── Pre-fill modal from existing GeoJSON feature ──────────────────────────
+    function prefillModal(feature) {
+      const p = feature.properties || {};
+      const geomType = feature.geometry.type;
+      if (geomType === "Point") {
+        const url = p.icon_url || "";
+        document.getElementById("customIconUrl").value = url;
+        const grid = document.getElementById("iconGrid");
+        grid.querySelectorAll(".icon-opt").forEach(e => e.classList.toggle("sel", e.dataset.url === url));
+        const dir = p.point?.gDirection || 0;
+        document.getElementById("gDirSlider").value = dir;
+        document.getElementById("gDirNum").value    = dir;
+        const tx = p.point?.texts || {};
+        [["top","topText","topColor","topHalo"],["bottom","botText","botColor","botHalo"],
+         ["left","leftText","leftColor","leftHalo"],["right","rightText","rightColor","rightHalo"],
+         ["center","centerText","centerColor","centerHalo"]].forEach(([pos,tid,cid,hid])=>{
+          const t = tx[pos];
+          document.getElementById(tid).value = t?.text || "";
+          if (t?.color)     document.getElementById(cid).value = t.color;
+          if (t?.haloColor) document.getElementById(hid).value = t.haloColor;
+        });
+      } else if (geomType === "LineString") {
+        const line = p.line || {};
+        document.getElementById("lineWidth").value      = line.width || 2;
+        document.getElementById("lineWidthNum").value   = line.width || 2;
+        document.getElementById("lineOpacity").value    = line.opacity ?? 1;
+        document.getElementById("lineOpacityNum").value = line.opacity ?? 1;
+        const txt = line.text || {};
+        document.getElementById("lineText").value      = txt.text    || "";
+        document.getElementById("lineUpText").value    = txt.upText  || "";
+        document.getElementById("lineDownText").value  = txt.downText|| "";
+        if (txt.color)     document.getElementById("lineTextColor").value = txt.color;
+        if (txt.haloColor) document.getElementById("lineHaloColor").value = txt.haloColor;
+        if (txt.haloWidth) document.getElementById("lineHaloWidth").value = txt.haloWidth;
+      } else if (geomType === "Polygon") {
+        const fill = p.fill || {};
+        document.getElementById("fillOpacity").value    = fill.opacity ?? 0.4;
+        document.getElementById("fillOpacityNum").value = fill.opacity ?? 0.4;
+        const url = p.icon_url || "";
+        document.getElementById("polyIconUrl").value = url;
+        document.getElementById("iconGridPoly").querySelectorAll(".icon-opt")
+          .forEach(e => e.classList.toggle("sel", e.dataset.url === url));
+      }
+    }
+
+    // ── Edit-feature mode ─────────────────────────────────────────────────────
+    async function handleEditFeatureClick(evt) {
+      if (!editFeatureMode) return;
+      const hit = await view.hitTest(evt, {
+        include: [...map.layers].filter(l => l.title === "eSitMap").flatMap(g => [...g.layers])
+      });
+      const res = hit.results.find(r => r.graphic?.layer?.title in LAYER_GEOM);
+      if (!res) return;
+      const geomType = LAYER_GEOM[res.graphic.layer.title];
+      const oid = res.graphic.attributes?.OBJECTID;
+      if (oid === undefined || oid === null) return;
+
+      let counter = -1;
+      const idx = currentGeoJSON.features.findIndex(f => {
+        if (f.geometry?.type === geomType) { counter++; return counter === oid; }
+        return false;
+      });
+      if (idx === -1) return;
+
+      const feature = currentGeoJSON.features[idx];
+      editingFeatureIdx = idx;
+
+      // Set pendingGeom from existing geometry so confirmFeature can rebuild cleanly
+      if (geomType === "Point") {
+        const [lon,lat] = feature.geometry.coordinates;
+        pendingGeom = new Point({ longitude:lon, latitude:lat, spatialReference:SR_WGS84 });
+        pendingType = "point";
+      } else if (geomType === "LineString") {
+        pendingGeom = new Polyline({ paths:[feature.geometry.coordinates.map(c=>[c[0],c[1]])], spatialReference:SR_WGS84 });
+        pendingType = feature.properties?.arrow ? "arrow" : "polyline";
+      } else {
+        pendingGeom = new Polygon({ rings:feature.geometry.coordinates.map(r=>r.map(c=>[c[0],c[1]])), spatialReference:SR_WGS84 });
+        pendingType = "polygon";
+      }
+
+      showModal(pendingType);
+      prefillModal(feature);
+    }
+
+    function enterEditFeatureMode() {
+      editFeatureMode = true;
+      exitDeleteMode();
+      stopArrowDraw();
+      if (sketchWidget) sketchWidget.cancel();
+      ["drawPoint","drawLine","drawPolygon","drawArrow"].forEach(id => document.getElementById(id).classList.remove("active"));
+      document.getElementById("drawEditFeature").classList.add("active");
+      if (clickHandle) { clickHandle.remove(); clickHandle = null; }
+      clickHandle = view.on("click", handleEditFeatureClick);
+    }
+
+    function exitEditFeatureMode() {
+      editFeatureMode = false;
+      editingFeatureIdx = null;
+      document.getElementById("drawEditFeature")?.classList.remove("active");
+      if (clickHandle) { clickHandle.remove(); clickHandle = null; }
+    }
+
+    // ── Arrow drag-draw ───────────────────────────────────────────────────────
+    // CIM arrow symbol: thick line + large filled triangle arrowhead at end
+    function makeCimArrow(strokeWidth) {
+      return {
+        type: "cim",
+        data: {
+          type: "CIMSymbolReference",
+          symbol: {
+            type: "CIMLineSymbol",
+            symbolLayers: [
+              {
+                type: "CIMSolidStroke", enable: true,
+                capStyle: "Round", joinStyle: "Round", miterLimit: 10,
+                width: strokeWidth, color: [255, 149, 0, 255]
+              },
+              {
+                type: "CIMVectorMarker", enable: true, size: 30,
+                markerPlacement: {
+                  type: "CIMMarkerPlacementAtExtremities",
+                  angleToLine: true, extremityPlacement: "JustEnd", offset: 0
+                },
+                frame: { xmin: -10, ymin: -10, xmax: 10, ymax: 10 },
+                markerGraphics: [{
+                  type: "CIMMarkerGraphic",
+                  geometry: { rings: [[[-10, -10], [10, 0], [-10, 10], [-10, -10]]] },
+                  symbol: {
+                    type: "CIMPolygonSymbol",
+                    symbolLayers: [{ type: "CIMSolidFill", enable: true, color: [255, 149, 0, 255] }]
+                  }
+                }],
+                respectFrame: true
+              }
+            ]
+          }
+        }
+      };
+    }
+    const ARROW_PREVIEW_SYM = makeCimArrow(2);
+
+    function startArrowDraw() {
+      arrowDrawMode = true;
+      document.body.classList.add("arrow-draw-mode");
+
+      const down = view.on("pointer-down", evt => {
+        if (!arrowDrawMode) return;
+        evt.stopPropagation();
+        arrowStart   = view.toMap(evt);
+        arrowStartPx = { x: evt.x, y: evt.y };
+        sketchLayer.removeAll();
+      });
+
+      const move = view.on("pointer-move", evt => {
+        if (!arrowDrawMode || !arrowStart || evt.buttons !== 1) return;
+        evt.stopPropagation();
+        const end = view.toMap(evt);
+        if (!end) return;
+        sketchLayer.removeAll();
+        sketchLayer.add(new Graphic({
+          geometry: new Polyline({
+            paths: [[[arrowStart.x, arrowStart.y], [end.x, end.y]]],
+            spatialReference: view.spatialReference,
+          }),
+          symbol: ARROW_PREVIEW_SYM,
+        }));
+      });
+
+      const up = view.on("pointer-up", evt => {
+        if (!arrowDrawMode || !arrowStart) return;
+        const end = view.toMap(evt);
+        if (!end || !arrowStartPx) { arrowStart = null; return; }
+        const dx = evt.x - arrowStartPx.x, dy = evt.y - arrowStartPx.y;
+        if (Math.sqrt(dx * dx + dy * dy) < 10) {
+          // too short — ignore (just a click, not a drag)
+          arrowStart = null; sketchLayer.removeAll(); return;
+        }
+        pendingGeom = new Polyline({
+          paths: [[[arrowStart.x, arrowStart.y], [end.x, end.y]]],
+          spatialReference: view.spatialReference,
+        });
+        pendingType  = "arrow";
+        arrowStart   = null;
+        arrowStartPx = null;
+        stopArrowDraw(false); // stop listeners; keep button active while modal shows
+        showModal("arrow");
+      });
+
+      // Prevent map panning while dragging an arrow
+      const drag = view.on("drag", evt => {
+        if (arrowDrawMode) evt.stopPropagation();
+      });
+
+      arrowDrawHandles = [down, move, up, drag];
+    }
+
+    function stopArrowDraw(clearButton = true) {
+      arrowDrawMode = false;
+      arrowStart    = null;
+      arrowStartPx  = null;
+      arrowDrawHandles.forEach(h => h.remove());
+      arrowDrawHandles = [];
+      document.body.classList.remove("arrow-draw-mode");
+      if (clearButton) document.getElementById("drawArrow")?.classList.remove("active");
+    }
+
+    // ── Draw buttons ──────────────────────────────────────────────────────────
+    function setDrawTool(tool) {
+      exitDeleteMode();
+      exitEditFeatureMode();
+      stopArrowDraw();
+      ["drawPoint","drawLine","drawPolygon","drawArrow"].forEach(id => document.getElementById(id).classList.remove("active"));
+      if (tool === "arrow") {
+        document.getElementById("drawArrow").classList.add("active");
+        startArrowDraw();
+        return;
+      }
+      if (!sketchWidget) return;
+      if (tool === "point")   { document.getElementById("drawPoint").classList.add("active");   sketchWidget.create("point"); }
+      if (tool === "polyline"){ document.getElementById("drawLine").classList.add("active");     sketchWidget.create("polyline"); }
+      if (tool === "polygon") { document.getElementById("drawPolygon").classList.add("active"); sketchWidget.create("polygon"); }
+    }
+    document.getElementById("drawPoint").onclick   = () => setDrawTool("point");
+    document.getElementById("drawLine").onclick    = () => setDrawTool("polyline");
+    document.getElementById("drawPolygon").onclick = () => setDrawTool("polygon");
+    document.getElementById("drawArrow").onclick   = () => setDrawTool("arrow");
+
+    // ── Edit mode toggle ──────────────────────────────────────────────────────
+    document.getElementById("btnEdit").onclick = () => {
+      editMode = !editMode;
+      document.getElementById("btnEdit").classList.toggle("active", editMode);
+      document.getElementById("editBar").classList.toggle("visible", editMode);
+      document.getElementById("editExportRow").style.display = editMode ? "flex" : "none";
+      if (editMode) createSketch();
+      else {
+        exitDeleteMode();
+        exitEditFeatureMode();
+        stopArrowDraw();
+        if (sketchWidget) { sketchWidget.destroy(); sketchWidget = null; }
+        sketchLayer.removeAll();
+      }
+    };
+
+    // ── 2D / 3D ───────────────────────────────────────────────────────────────
+    document.getElementById("btn2d").onclick = async () => {
+      if (!is3D) return;
+      document.getElementById("btn2d").classList.add("active");
+      document.getElementById("btn3d").classList.remove("active");
+      document.getElementById("rotateHint").innerHTML =
+        "⤵ סיבוב: Shift + גרירה<br>🧭 לחיצה על מצפן → איפוס צפון";
+      await activateView(false);
+    };
+    document.getElementById("btn3d").onclick = async () => {
+      if (is3D) return;
+      document.getElementById("btn3d").classList.add("active");
+      document.getElementById("btn2d").classList.remove("active");
+      document.getElementById("rotateHint").innerHTML =
+        "🖱 שמאל: הזזה · ימין/Ctrl: סיבוב<br>🔄 NavigationToggle: מצב סיבוב נוח";
+      await activateView(true);
+    };
+
+    // ── Waypoint jump ─────────────────────────────────────────────────────────
+    document.getElementById("btnJump").onclick = () => {
+      const val = document.getElementById("waypointSelect").value;
+      if (!val) return;
+      const [lon, lat, zoom] = val.split(",").map(Number);
+      if (is3D) {
+        const alt = zoom >= 14 ? 3000 : zoom >= 12 ? 12000 : zoom >= 10 ? 40000 : 200000;
+        view.goTo({ position: { longitude: lon, latitude: lat, z: alt }, tilt: 55, heading: 0 },
+                  { duration: 1200 });
+      } else {
+        view.goTo({ center: [lon, lat], zoom }, { duration: 1000 });
+      }
+    };
+
+    // ── Jump to coordinates ───────────────────────────────────────────────────
+    document.getElementById("btnJumpCoord").onclick = () => {
+      const raw = document.getElementById("coordInput").value.trim();
+      if (!raw) return;
+      // Accept: "lat, lon" or "lat lon" or "lon, lat" — detect by range (Israel lat ~29-34, lon ~34-36)
+      const parts = raw.split(/[\s,;]+/).map(Number).filter(n => !isNaN(n));
+      if (parts.length < 2) { setStatus("פורמט לא תקין — הכנס: קו רוחב, קו אורך","error"); return; }
+      let [a, b] = parts;
+      // Heuristic: latitude for Israel is ~29–34, longitude is ~34–37
+      let lat, lon;
+      if (a >= 29 && a <= 34 && b >= 34 && b <= 37) { lat = a; lon = b; }        // lat,lon
+      else if (b >= 29 && b <= 34 && a >= 34 && a <= 37) { lat = b; lon = a; }   // lon,lat
+      else { lat = a; lon = b; }  // best guess
+      if (is3D) {
+        view.goTo({ position: { longitude: lon, latitude: lat, z: 5000 }, tilt: 55, heading: 0 }, { duration: 1200 });
+      } else {
+        view.goTo({ center: [lon, lat], zoom: 14 }, { duration: 1000 });
+      }
+    };
+    document.getElementById("coordInput").addEventListener("keydown", e => {
+      if (e.key === "Enter") document.getElementById("btnJumpCoord").click();
+    });
+
+    // ── Coordinate bar ────────────────────────────────────────────────────────
+    const coordBarVal  = document.querySelector("#coordBar .cb-val");
+    let ptrHandle = null;
+
+    function bindPointerMove() {
+      if (ptrHandle) { ptrHandle.remove(); ptrHandle = null; }
+      ptrHandle = view.on("pointer-move", evt => {
+        try {
+          const pt = view.toMap({ x: evt.x, y: evt.y });
+          if (pt && isFinite(pt.longitude) && isFinite(pt.latitude)) {
+            const lat = pt.latitude.toFixed(6);
+            const lon = pt.longitude.toFixed(6);
+            coordBarVal.textContent = `רח׳ (Lat): ${lat}   |   אורך (Lon): ${lon}`;
+            coordBarVal.dataset.lat = lat;
+            coordBarVal.dataset.lon = lon;
+          }
+        } catch {}
+      });
+    }
+
+    // Click coord bar → paste into jump field
+    document.getElementById("coordBar").addEventListener("click", () => {
+      const lat = coordBarVal.dataset.lat;
+      const lon = coordBarVal.dataset.lon;
+      if (!lat || !lon) return;
+      document.getElementById("coordInput").value = `${lat}, ${lon}`;
+      // brief flash feedback
+      coordBarVal.style.color = "#2ecc71";
+      setTimeout(() => coordBarVal.style.color = "", 600);
+    });
+
+    mapView2D.when(() => { bindPointerMove(); });
+
+    // ── Self-location tracking ────────────────────────────────────────────────
+    const _locSvg = encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">` +
+      `<circle cx="20" cy="20" r="18" fill="rgba(0,122,255,0.15)" stroke="rgba(0,122,255,0.4)" stroke-width="1.5"/>` +
+      `<circle cx="20" cy="20" r="9" fill="#007aff" stroke="white" stroke-width="2.5"/>` +
+      `</svg>`
+    );
+    const MY_LOC_SYM = { type:"picture-marker", url:`data:image/svg+xml,${_locSvg}`, width:"40px", height:"40px" };
+
+    // Build a geodesic-ish circle polygon around (lon,lat) with radius in metres
+    function makeAccuracyCircle(lon, lat, radiusMeters) {
+      const n = 64;
+      const latR = lat * Math.PI / 180;
+      const dLat = radiusMeters / 111320;
+      const dLon = radiusMeters / (111320 * Math.cos(latR));
+      const ring = [];
+      for (let i = 0; i <= n; i++) {
+        const a = (i / n) * 2 * Math.PI;
+        ring.push([lon + dLon * Math.cos(a), lat + dLat * Math.sin(a)]);
+      }
+      return new Polygon({ rings: [ring], spatialReference: SR_WGS84 });
+    }
+    const ACC_CIRCLE_SYM = {
+      type: "simple-fill",
+      color: [0, 122, 255, 0.12],
+      outline: { color: [0, 122, 255, 0.55], width: 1.5, style: "dash" }
+    };
+
+    function fetchLocation(goTo) {
+      if (!navigator.geolocation) { setStatus("הדפדפן לא תומך ב-GPS","error"); return; }
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const lon = pos.coords.longitude, lat = pos.coords.latitude;
+          const acc = Math.round(pos.coords.accuracy);
+          locationLayer.removeAll();
+          // accuracy circle (shown only when radius > 20 m to avoid clutter)
+          if (acc > 20) {
+            locationLayer.add(new Graphic({
+              geometry: makeAccuracyCircle(lon, lat, acc),
+              symbol: ACC_CIRCLE_SYM,
+            }));
+          }
+          locationLayer.add(new Graphic({
+            geometry: new Point({ longitude: lon, latitude: lat, spatialReference: SR_WGS84 }),
+            symbol: MY_LOC_SYM,
+          }));
+          const accLabel = acc >= 1000 ? `±${(acc/1000).toFixed(1)}ק"מ` : `±${acc}מ'`;
+          setStatus(`📍 מיקום עודכן · דיוק ${accLabel}`, "ok");
+          if (goTo) {
+            if (is3D) {
+              view.goTo({ position: { longitude: lon, latitude: lat, z: 5000 }, tilt: 55, heading: 0 }, { duration: 1200 });
+            } else {
+              view.goTo({ center: [lon, lat], zoom: 15 }, { duration: 1000 });
+            }
+          }
+        },
+        err => {
+          const msg = err.code === 1 ? "הרשאת מיקום נדחתה" : err.code === 2 ? "מיקום לא זמין" : "תם הזמן לאיתור";
+          setStatus("שגיאת מיקום: " + msg, "error");
+          stopLocationTracking();
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    }
+
+    function startLocationTracking() {
+      locationActive = true;
+      document.getElementById("btnMyLocation").classList.add("active");
+      fetchLocation(true);                                          // immediate + go-to
+      locationIntervalId = setInterval(() => fetchLocation(false), 30000); // refresh every 30s
+    }
+
+    function stopLocationTracking() {
+      locationActive = false;
+      document.getElementById("btnMyLocation").classList.remove("active");
+      if (locationIntervalId) { clearInterval(locationIntervalId); locationIntervalId = null; }
+      locationLayer.removeAll();
+    }
+
+    document.getElementById("btnMyLocation").onclick = () => {
+      if (locationActive) stopLocationTracking();
+      else startLocationTracking();
+    };
+
+    // start location tracking automatically on load
+    startLocationTracking();
+
+    // ── Status ────────────────────────────────────────────────────────────────
+    const statusEl = document.getElementById("status");
+    function setStatus(msg, type) { statusEl.textContent = msg; statusEl.className = type||""; }
+
+    // ── Modal helpers ─────────────────────────────────────────────────────────
+    function showModal(type) {
+      // Clear form fields each time so previous values don't bleed through
+      if (type === "point") {
+        ["topText","botText","leftText","rightText","centerText"].forEach(id => {
+          document.getElementById(id).value = "";
+        });
+        document.getElementById("gDirSlider").value = 0;
+        document.getElementById("gDirNum").value    = 0;
+        // Reset icon selection to first
+        const grid = document.getElementById("iconGrid");
+        grid.querySelectorAll(".icon-opt").forEach(e => e.classList.remove("sel"));
+        grid.querySelector(".icon-opt").classList.add("sel");
+        document.getElementById("customIconUrl").value = grid.querySelector(".icon-opt").dataset.url;
+      } else if (type === "polyline" || type === "arrow") {
+        ["lineText","lineUpText","lineDownText"].forEach(id => {
+          document.getElementById(id).value = "";
+        });
+        document.getElementById("lineWidth").value      = 2;  document.getElementById("lineWidthNum").value   = 2;
+        document.getElementById("lineOpacity").value    = 1;  document.getElementById("lineOpacityNum").value = 1;
+        document.getElementById("lineTextColor").value  = type === "arrow" ? "#ff9500" : "#00eaea";
+        document.getElementById("lineHaloColor").value  = "#000000";
+        document.getElementById("lineHaloWidth").value  = 1.5;
+      } else if (type === "polygon") {
+        document.getElementById("fillOpacity").value    = 0.4;
+        document.getElementById("fillOpacityNum").value = 0.4;
+        const gridP = document.getElementById("iconGridPoly");
+        gridP.querySelectorAll(".icon-opt").forEach(e => e.classList.remove("sel"));
+        gridP.querySelector(".icon-opt").classList.add("sel");
+        document.getElementById("polyIconUrl").value = gridP.querySelector(".icon-opt").dataset.url;
+      }
+
+      document.getElementById("pointFields").style.display = type==="point"    ? "" : "none";
+      document.getElementById("lineFields").style.display  = (type==="polyline"||type==="arrow") ? "" : "none";
+      document.getElementById("polyFields").style.display  = type==="polygon"  ? "" : "none";
+      document.getElementById("modalTitle").textContent =
+        type==="point" ? "הוסף נקודה" : type==="polyline" ? "הוסף קו" : type==="arrow" ? "הוסף חץ" : "הוסף פוליגון";
+      document.getElementById("propsModal").classList.add("visible");
+    }
+
+    function hideModal() {
+      document.getElementById("propsModal").classList.remove("visible");
+      // Reset only draw-tool buttons (not editFeature/delete)
+      ["drawPoint","drawLine","drawPolygon","drawArrow"].forEach(id => {
+        document.getElementById(id).classList.remove("active");
+      });
+      pendingGeom = null;
+      pendingType = null;
+      editingFeatureIdx = null;
+    }
+
+    // slider ↔ number sync
+    [["gDirSlider","gDirNum"],["lineWidth","lineWidthNum"],
+     ["lineOpacity","lineOpacityNum"],["fillOpacity","fillOpacityNum"]].forEach(([s,n])=>{
+      document.getElementById(s).oninput = () => document.getElementById(n).value = document.getElementById(s).value;
+      document.getElementById(n).oninput = () => document.getElementById(s).value = document.getElementById(n).value;
+    });
+
+    document.getElementById("cancelFeature").onclick = () => { hideModal(); sketchLayer.removeAll(); };
+
+    // ── Confirm → build GeoJSON feature ──────────────────────────────────────
+    document.getElementById("confirmFeature").onclick = async () => {
+      if (!pendingGeom && editingFeatureIdx === null) return;
+      // Snapshot and clear immediately to prevent double-fire
+      const geomSnapshot = pendingGeom;
+      const typeSnapshot = pendingType;
+      pendingGeom = null;
+      pendingType = null;
+
+      // Convert from Web Mercator to WGS84 if needed
+      let geom = geomSnapshot;
+      if (geom.spatialReference?.wkid !== 4326) {
+        geom = webMercatorUtils.webMercatorToGeographic(geom);
+      }
+
+      let feature = null;
+
+      if (typeSnapshot === "point") {
+        const dir  = parseFloat(document.getElementById("gDirNum").value) || 0;
+        const texts = {};
+        [["top","topText","topColor","topHalo"],
+         ["bottom","botText","botColor","botHalo"],
+         ["left","leftText","leftColor","leftHalo"],
+         ["right","rightText","rightColor","rightHalo"],
+         ["center","centerText","centerColor","centerHalo"]].forEach(([pos,tid,cid,hid])=>{
+          const t = document.getElementById(tid).value.trim();
+          if (t) texts[pos] = { text:t, color:document.getElementById(cid).value, haloColor:document.getElementById(hid).value, haloWidth:1.5 };
+        });
+        feature = {
+          type:"Feature",
+          geometry: { type:"Point", coordinates:[geom.longitude, geom.latitude] },
+          properties: {
+            icon_url: document.getElementById("customIconUrl").value || ICONS[0].url,
+            point: { gDirection:dir, texts }
+          }
+        };
+
+      } else if (typeSnapshot === "polyline" || typeSnapshot === "arrow") {
+        const path = geom.paths[0].map(p => [p[0], p[1]]);
+        const lineTextColor = document.getElementById("lineTextColor").value;
+        const haloColor     = document.getElementById("lineHaloColor").value;
+        const haloWidth     = parseFloat(document.getElementById("lineHaloWidth").value) || 1.5;
+        const textObj = {};
+        const t  = document.getElementById("lineText").value.trim();
+        const ut = document.getElementById("lineUpText").value.trim();
+        const dt = document.getElementById("lineDownText").value.trim();
+        if (t)  { textObj.text     = t;  textObj.color = lineTextColor; textObj.haloColor = haloColor; textObj.haloWidth = haloWidth; }
+        if (ut) textObj.upText   = ut;
+        if (dt) textObj.downText = dt;
+        const lineProps = {
+          icon_url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E",
+          line: {
+            width:   parseFloat(document.getElementById("lineWidthNum").value)   || 2,
+            opacity: parseFloat(document.getElementById("lineOpacityNum").value) || 1,
+            text: Object.keys(textObj).length ? textObj : undefined,
+          }
+        };
+        if (typeSnapshot === "arrow") lineProps.arrow = true;
+        feature = { type:"Feature", geometry:{ type:"LineString", coordinates:path }, properties:lineProps };
+
+      } else if (typeSnapshot === "polygon") {
+        const rings = geom.rings.map(ring => ring.map(p=>[p[0],p[1]]));
+        feature = {
+          type:"Feature",
+          geometry: { type:"Polygon", coordinates: rings },
+          properties: {
+            icon_url:   document.getElementById("polyIconUrl").value || ICONS[0].url,
+            fill: { opacity: parseFloat(document.getElementById("fillOpacityNum").value) || 0.4 }
+          }
+        };
+      }
+
+      if (!feature) { hideModal(); return; }
+
+      if (!currentGeoJSON) currentGeoJSON = { type:"FeatureCollection", features:[] };
+      if (editingFeatureIdx !== null) {
+        // Update in-place: keep geometry from form (reconstructed from original), update properties
+        currentGeoJSON.features[editingFeatureIdx] = feature;
+        editingFeatureIdx = null;
+      } else {
+        currentGeoJSON.features.push(feature);
+      }
+      hideModal();
+      await loadGeoJSON(currentGeoJSON);
+    };
+
+    // ── Undo last ─────────────────────────────────────────────────────────────
+    document.getElementById("btnUndoLast").onclick = () => {
+      if (!currentGeoJSON?.features?.length) return;
+      currentGeoJSON.features.pop();
+      loadGeoJSON(currentGeoJSON);
+      setStatus("פיצ'ר אחרון נמחק");
+    };
+
+    // ── Export GeoJSON ────────────────────────────────────────────────────────
+    document.getElementById("btnExport").onclick = () => {
+      if (!currentGeoJSON?.features?.length) { setStatus("אין נתונים לייצוא","error"); return; }
+      const blob = new Blob([JSON.stringify(currentGeoJSON, null, 2)], { type:"application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "esitmap_export.geojson";
+      a.click();
+    };
+
+    // ── icon cache ────────────────────────────────────────────────────────────
+    async function svgToDataUrl(url) {
+      if (iconCache[url]) return iconCache[url];
+      if (url.startsWith("data:")) { iconCache[url]=url; return url; }
+      try {
+        const res = await fetch(url, { mode:"cors" });
+        const svg = await res.text();
+        iconCache[url] = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+      } catch { iconCache[url]=url; }
+      return iconCache[url];
+    }
+    async function buildIconMap(features) {
+      const unique = [...new Set(features.map(f=>f.properties?.icon_url).filter(Boolean))];
+      const result = {};
+      for (const u of unique) result[u] = await svgToDataUrl(u);
+      return result;
+    }
+    function dig(obj,...keys){ try{ return keys.reduce((o,k)=>o[k],obj); }catch{ return undefined; } }
+    function collectPoints(geometry) {
+      if (!geometry) return [];
+      switch(geometry.type){
+        case"Point":return[geometry.coordinates];
+        case"LineString":return geometry.coordinates;
+        case"Polygon":return geometry.coordinates.flat();
+        default:return[];
+      }
+    }
+
+    // ── Point Layer ───────────────────────────────────────────────────────────
+    async function buildPointLayer(features) {
+      if (!features.length) return null;
+      const iconMap = await buildIconMap(features);
+
+      const graphics = features.map((f,i) => {
+        const p=f.properties||{}, pt=p.point||{}, tx=pt.texts||{};
+        const [lon,lat,z=0] = f.geometry.coordinates;
+        const pos=key=>({ text:dig(tx,key,"text")||"", color:dig(tx,key,"color")||"#ffffff", haloColor:dig(tx,key,"haloColor")||"#000000", haloWidth:dig(tx,key,"haloWidth")||1 });
+        const rawDir = pt.gDirection!==undefined ? pt.gDirection : null;
+        return new Graphic({
+          geometry: new Point({ longitude:lon, latitude:lat, z, spatialReference:SR_WGS84 }),
+          attributes: {
+            OBJECTID:i, icon_url:p.icon_url||"", g_direction:rawDir!==null?rawDir-90:0,
+            label_top:pos("top").text, label_bottom:pos("bottom").text,
+            label_left:pos("left").text, label_right:pos("right").text, label_center:pos("center").text,
+            text_color:["center","top","bottom","left","right"].map(k=>dig(tx,k,"color")).find(Boolean)||"#ffffff",
+          }
+        });
+      });
+
+      const mk2D = (dataUrl)=>({ type:"picture-marker", url:dataUrl, width:"40px", height:"40px" });
+      const mk3D = (dataUrl)=>({
+        type:"point-3d", symbolLayers:[{ type:"icon", resource:{href:dataUrl}, size:40 }],
+        callout:{ type:"line", size:1.5, color:"white", border:{color:"black"} },
+        verticalOffset:{ screenLength:"80px", maxWorldLength:50, minWorldLength:10 }
+      });
+      const uvi2D = Object.entries(iconMap).map(([u,d])=>({ value:u, label:u, symbol:mk2D(d) }));
+      const uvi3D = Object.entries(iconMap).map(([u,d])=>({ value:u, label:u, symbol:mk3D(d) }));
+      const defSym2D = uvi2D[0]?.symbol||{ type:"simple-marker", color:[0,120,255,.9], size:12 };
+      const defSym3D = uvi3D[0]?.symbol||{ type:"point-3d", symbolLayers:[{type:"icon",resource:{primitive:"circle"},size:12}] };
+
+      const labelPositions=[
+        {field:"label_top",placement:"above-center"},{field:"label_bottom",placement:"below-center"},
+        {field:"label_left",placement:"center-left"},{field:"label_right",placement:"center-right"},
+        {field:"label_center",placement:"center-center"},
+      ];
+
+      return new FeatureLayer({
+        title:"נקודות", source:graphics, objectIdField:"OBJECTID",
+        geometryType:"point", spatialReference:SR_WGS84,
+        fields:[
+          {name:"OBJECTID",type:"oid"},{name:"icon_url",type:"string"},
+          {name:"g_direction",type:"double"},{name:"label_top",type:"string"},
+          {name:"label_bottom",type:"string"},{name:"label_left",type:"string"},
+          {name:"label_right",type:"string"},{name:"label_center",type:"string"},
+          {name:"text_color",type:"string"},
+        ],
+        renderer:{
+          type:"unique-value", field:"icon_url",
+          uniqueValueInfos: is3D ? uvi3D : uvi2D,
+          defaultSymbol:    is3D ? defSym3D : defSym2D,
+          visualVariables:[{ type:"rotation", field:"g_direction", rotationType:"geographic" }],
+        },
+        labelsVisible:true,
+        labelingInfo:labelPositions.map(({field,placement})=>({
+          labelExpressionInfo:{ expression:`$feature["${field}"]` },
+          where:`${field} <> ''`,
+          symbol:{ type:"text", color:"white", haloColor:"black", haloSize:"1.5px", font:{size:11,family:"Arial"} },
+          labelPlacement:placement, minScale:50000, maxScale:0,
+        })),
+        elevationInfo:{ mode:"relative-to-scene" },
+      });
+    }
+
+    // ── Line Layer ────────────────────────────────────────────────────────────
+    function buildLineLayer(features) {
+      if (!features.length) return null;
+      const graphics = features.map((f,i)=>{
+        const p=f.properties||{}, line=p.line||{}, txt=line.text||{};
+        return new Graphic({
+          geometry: new Polyline({ paths:[f.geometry.coordinates.map(c=>[c[0],c[1]])], spatialReference:SR_WGS84 }),
+          attributes:{ OBJECTID:i, icon_url:p.icon_url||"", line_width:line.width||2,
+            line_opacity:line.opacity??1, line_text:txt.text||"", line_up_text:txt.upText||"",
+            line_down_text:txt.downText||"", text_color:txt.color||"#ffffff",
+            halo_color:txt.haloColor||"#000000", halo_width:txt.haloWidth||1,
+            is_arrow: p.arrow ? 1 : 0 }
+        });
+      });
+      const lineSym  = { type:"simple-line", color:"#00eaea", width:1, style:"solid" };
+      // CIM arrow: line shaft + large filled triangle head, width driven by visual variable
+      const arrowSym = makeCimArrow(2);
+      return new FeatureLayer({
+        title:"קווים", source:graphics, objectIdField:"OBJECTID",
+        geometryType:"polyline", spatialReference:SR_WGS84,
+        fields:[
+          {name:"OBJECTID",type:"oid"},{name:"icon_url",type:"string"},
+          {name:"line_width",type:"double"},{name:"line_opacity",type:"double"},
+          {name:"line_text",type:"string"},{name:"line_up_text",type:"string"},
+          {name:"line_down_text",type:"string"},{name:"text_color",type:"string"},
+          {name:"halo_color",type:"string"},{name:"halo_width",type:"double"},
+          {name:"is_arrow",type:"integer"},
+        ],
+        renderer:{
+          type:"unique-value", field:"is_arrow",
+          uniqueValueInfos:[
+            { value:0, label:"קו",  symbol:lineSym  },
+            { value:1, label:"חץ",  symbol:arrowSym },
+          ],
+          defaultSymbol: lineSym,
+          // Scale line body width from the stored line_width attribute (1–10 px range)
+          visualVariables:[{
+            type:"size", field:"line_width",
+            minDataValue:1, maxDataValue:10,
+            minSize:1,      maxSize:10,
+          }],
+        },
+        labelsVisible:true,
+        labelingInfo:[
+          {field:"line_text",placement:"center-along"},
+          {field:"line_up_text",placement:"above-along"},
+          {field:"line_down_text",placement:"below-along"},
+        ].map(({field,placement})=>({
+          labelExpressionInfo:{ expression:`$feature["${field}"]` },
+          where:`${field} <> ''`,
+          symbol:{ type:"text", color:"white", haloColor:"black", haloSize:"1.5px", font:{size:11} },
+          labelPlacement:placement, minScale:150000, maxScale:0,
+        })),
+        elevationInfo:{ mode:"relative-to-scene" },
+      });
+    }
+
+    // ── Polygon Layer ─────────────────────────────────────────────────────────
+    async function buildPolygonLayer(features) {
+      if (!features.length) return null;
+      const iconMap = await buildIconMap(features);
+      const graphics = features.map((f,i)=>{
+        const p=f.properties||{}, fill=p.fill||{};
+        return new Graphic({
+          geometry: new Polygon({ rings:f.geometry.coordinates.map(r=>r.map(c=>[c[0],c[1]])), spatialReference:SR_WGS84 }),
+          attributes:{ OBJECTID:i, icon_url:p.icon_url||"", fill_opacity:fill.opacity??1 }
+        });
+      });
+      const uvi = Object.entries(iconMap).map(([url,dataUrl])=>({
+        value:url, label:url,
+        symbol:{ type:"picture-fill", url:dataUrl, width:"20px", height:"20px", outline:{ color:"rgba(140,140,140,.5)", width:1 } }
+      }));
+      const defSym = { type:"simple-fill", color:[80,80,80,.2], outline:{ color:"rgba(180,180,180,.7)", width:1 } };
+      return new FeatureLayer({
+        title:"פוליגונים", source:graphics, objectIdField:"OBJECTID",
+        geometryType:"polygon", spatialReference:SR_WGS84,
+        fields:[{name:"OBJECTID",type:"oid"},{name:"icon_url",type:"string"},{name:"fill_opacity",type:"double"}],
+        renderer: uvi.length ? { type:"unique-value", field:"icon_url", uniqueValueInfos:uvi, defaultSymbol:defSym } : { type:"simple", symbol:defSym },
+        elevationInfo:{ mode:"relative-to-scene" },
+      });
+    }
+
+    // ── Load GeoJSON ──────────────────────────────────────────────────────────
+    async function loadGeoJSON(geojson, skipGoTo = false) {
+      const features = geojson.features||[];
+      if (!features.length) { setStatus("אין פיצ'רים","error"); return; }
+      currentGeoJSON = geojson;
+      setStatus(`מעבד ${features.length} פיצ'רים...`);
+      [...map.layers].filter(l=>l.title==="eSitMap").forEach(l=>map.remove(l));
+
+      const pts  = features.filter(f=>f.geometry?.type==="Point");
+      const lns  = features.filter(f=>f.geometry?.type==="LineString");
+      const poly = features.filter(f=>f.geometry?.type==="Polygon");
+      const group = new GroupLayer({ title:"eSitMap", visible:true });
+
+      if (poly.length) { const l=await buildPolygonLayer(poly); if(l) group.add(l); }
+      if (lns.length)  { const l=buildLineLayer(lns);           if(l) group.add(l); }
+      if (pts.length)  { setStatus(`טוען אייקונים (${pts.length} נקודות)...`); const l=await buildPointLayer(pts); if(l) group.add(l); }
+
+      map.add(group);
+      if (!skipGoTo) {
+        try {
+          const allCoords = features.flatMap(f=>collectPoints(f.geometry));
+          if (allCoords.length) {
+            const lons=allCoords.map(c=>c[0]), lats=allCoords.map(c=>c[1]);
+            view.goTo(new Extent({ xmin:Math.min(...lons), ymin:Math.min(...lats), xmax:Math.max(...lons), ymax:Math.max(...lats), spatialReference:SR_WGS84 }).expand(1.3));
+          }
+        } catch {}
+      }
+      // Populate waypoints from loaded point features
+      const featGroup = document.getElementById("waypointFeaturesGroup");
+      featGroup.innerHTML = "";
+      pts.forEach((f, i) => {
+        const tx = f.properties?.point?.texts || {};
+        const label = tx.top?.text || tx.center?.text || tx.bottom?.text || `נקודה ${i+1}`;
+        const [lon, lat] = f.geometry.coordinates;
+        const opt = document.createElement("option");
+        opt.value = `${lon},${lat},15`;
+        opt.textContent = label;
+        featGroup.appendChild(opt);
+      });
+      setStatus(`✓ ${pts.length} נקודות · ${lns.length} קווים · ${poly.length} פוליגונים`,"ok");
+    }
+
+    // ── File / URL loaders ────────────────────────────────────────────────────
+    document.getElementById("loadUrl").onclick = async () => {
+      const url = document.getElementById("geojsonUrl").value.trim();
+      if (!url) return;
+      setStatus("טוען מ-URL...");
+      try { await loadGeoJSON(await (await fetch(url)).json()); }
+      catch(e){ setStatus("שגיאה: "+e.message,"error"); }
+    };
+    document.getElementById("geojsonFile").onchange = async e => {
+      const file = e.target.files[0]; if (!file) return;
+      setStatus("קורא קובץ...");
+      try { await loadGeoJSON(JSON.parse(await file.text())); }
+      catch(e){ setStatus("שגיאה: "+e.message,"error"); }
+    };
+
+  }); // end require
+  </script>
+</body>
+</html>

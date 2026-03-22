@@ -1,0 +1,168 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [34.78, 32.07] },
+      "properties": {
+        "icon_url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='16' fill='%23e74c3c' stroke='white' stroke-width='2'/%3E%3Ctext x='20' y='25' text-anchor='middle' fill='white' font-size='14' font-weight='bold'%3ET%3C/text%3E%3C/svg%3E",
+        "point": {
+          "gDirection": 45,
+          "texts": {
+            "top":    { "text": "תל אביב",  "color": "#ffffff", "haloColor": "#000000", "haloWidth": 1.5 },
+            "bottom": { "text": "יחידה א׳", "color": "#ffcc00", "haloColor": "#000000", "haloWidth": 1 }
+          }
+        }
+      }
+    },
+
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [35.22, 31.77] },
+      "properties": {
+        "icon_url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpolygon points='20%2C4 36%2C36 4%2C36' fill='%232ecc71' stroke='white' stroke-width='2'/%3E%3Ctext x='20' y='32' text-anchor='middle' fill='white' font-size='12' font-weight='bold'%3EJ%3C/text%3E%3C/svg%3E",
+        "point": {
+          "gDirection": 130,
+          "texts": {
+            "top":   { "text": "ירושלים", "color": "#ffffff", "haloColor": "#000000", "haloWidth": 1.5 },
+            "right": { "text": "עמדה 2",  "color": "#7fb3ff", "haloColor": "#000000", "haloWidth": 1 }
+          }
+        }
+      }
+    },
+
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [34.99, 32.79] },
+      "properties": {
+        "icon_url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='4' y='4' width='32' height='32' rx='4' fill='%233498db' stroke='white' stroke-width='2'/%3E%3Ctext x='20' y='26' text-anchor='middle' fill='white' font-size='14' font-weight='bold'%3EH%3C/text%3E%3C/svg%3E",
+        "point": {
+          "gDirection": 270,
+          "texts": {
+            "top":  { "text": "חיפה",    "color": "#ffffff", "haloColor": "#000000", "haloWidth": 1.5 },
+            "left": { "text": "בסיס ב׳", "color": "#ff9944", "haloColor": "#000000", "haloWidth": 1 }
+          }
+        }
+      }
+    },
+
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [34.45, 31.51] },
+      "properties": {
+        "icon_url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpolygon points='20%2C2 24%2C14 38%2C14 27%2C22 31%2C34 20%2C26 9%2C34 13%2C22 2%2C14 16%2C14' fill='%23f39c12' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E",
+        "point": {
+          "gDirection": 0,
+          "texts": {
+            "bottom": { "text": "באר שבע", "color": "#ffffff", "haloColor": "#000000", "haloWidth": 1.5 }
+          }
+        }
+      }
+    },
+
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [35.50, 32.85] },
+      "properties": {
+        "icon_url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='16' fill='%239b59b6' stroke='white' stroke-width='2'/%3E%3Ccircle cx='20' cy='20' r='6' fill='white'/%3E%3C/svg%3E",
+        "point": {
+          "gDirection": 90,
+          "texts": {
+            "top":   { "text": "טבריה",   "color": "#ffffff", "haloColor": "#1a0033", "haloWidth": 1.5 },
+            "right": { "text": "צומת ג׳", "color": "#cc99ff", "haloColor": "#000000", "haloWidth": 1 }
+          }
+        }
+      }
+    },
+
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [34.78, 32.07],
+          [34.90, 31.90],
+          [35.22, 31.77]
+        ]
+      },
+      "properties": {
+        "icon_url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E",
+        "line": {
+          "width": 3,
+          "opacity": 0.9,
+          "text": {
+            "text":     "ציר ראשי",
+            "upText":   "דרום",
+            "downText":  "צפון",
+            "color":     "#00eaea",
+            "haloColor": "#000000",
+            "haloWidth": 1.5
+          }
+        }
+      }
+    },
+
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [34.99, 32.79],
+          [35.20, 32.50],
+          [35.50, 32.85]
+        ]
+      },
+      "properties": {
+        "icon_url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E",
+        "line": {
+          "width": 2,
+          "opacity": 0.8,
+          "text": {
+            "text":     "ציר משני",
+            "color":     "#ffaa00",
+            "haloColor": "#000000",
+            "haloWidth": 1
+          }
+        }
+      }
+    },
+
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [34.60, 32.20],
+          [35.00, 32.20],
+          [35.00, 31.60],
+          [34.60, 31.60],
+          [34.60, 32.20]
+        ]]
+      },
+      "properties": {
+        "icon_url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Crect width='10' height='10' fill='%2300aaff' opacity='0.5'/%3E%3Crect x='10' y='10' width='10' height='10' fill='%2300aaff' opacity='0.5'/%3E%3C/svg%3E",
+        "fill": { "opacity": 0.4 }
+      }
+    },
+
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [35.10, 33.00],
+          [35.60, 33.00],
+          [35.60, 32.60],
+          [35.10, 32.60],
+          [35.10, 33.00]
+        ]]
+      },
+      "properties": {
+        "icon_url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Crect width='10' height='10' fill='%23ff6600' opacity='0.5'/%3E%3Crect x='10' y='10' width='10' height='10' fill='%23ff6600' opacity='0.5'/%3E%3C/svg%3E",
+        "fill": { "opacity": 0.35 }
+      }
+    }
+
+  ]
+}
