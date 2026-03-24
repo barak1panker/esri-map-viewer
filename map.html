@@ -231,7 +231,7 @@
 
   <!-- ── Terrain analysis legend (bottom-right, shown only when active) ── -->
   <div id="terrainLegend" style="display:none">
-    <div class="tl-title">ניתוח גובה טקטי</div>
+    <div class="tl-title">ניתוח שולט / נשלט</div>
     <div class="tl-row"><span class="tl-swatch" style="background:#8b0000"></span> גבוה מאוד מעליך (&gt;+50מ')</div>
     <div class="tl-row"><span class="tl-swatch" style="background:#dc3545"></span> גבוה מעליך (&gt;+20מ')</div>
     <div class="tl-row"><span class="tl-swatch" style="background:#ff8c00"></span> מעט גבוה (+5–20מ')</div>
@@ -239,7 +239,7 @@
     <div class="tl-row"><span class="tl-swatch" style="background:#87ceeb"></span> מעט נמוך (−5–20מ')</div>
     <div class="tl-row"><span class="tl-swatch" style="background:#1e90ff"></span> נמוך מתחתיך (−20–50מ')</div>
     <div class="tl-row"><span class="tl-swatch" style="background:#00008b"></span> נמוך מאוד (&lt;−50מ')</div>
-    <div class="tl-note">אדום = אזור איום (אויב שם מעליך)<br>כחול = יתרון שלך (אתה מעל האזור)</div>
+    <div class="tl-note">ביחס לממוצע הפוליגון:<br>אדום = שולט (גבוה מהממוצע)<br>כחול = נשלט (נמוך מהממוצע)</div>
   </div>
 
   <!-- ── Coordinate bar (bottom, full-width) ── -->
@@ -361,6 +361,7 @@
     "esri/geometry/Point",
     "esri/geometry/Polyline",
     "esri/geometry/Polygon",
+    "esri/geometry/Multipoint",
     "esri/geometry/Extent",
     "esri/geometry/SpatialReference",
     "esri/geometry/support/webMercatorUtils",
@@ -371,7 +372,7 @@
   ], function(
     Map, MapView, SceneView,
     FeatureLayer, GraphicsLayer, GroupLayer, SceneLayer,
-    Graphic, Point, Polyline, Polygon, Extent, SpatialReference,
+    Graphic, Point, Polyline, Polygon, Multipoint, Extent, SpatialReference,
     webMercatorUtils, Sketch, Compass, NavigationToggle, Home
   ) {
 
@@ -560,6 +561,7 @@
       if (editMode)        createSketch();
       if (deleteMode)      { exitDeleteMode(); enterDeleteMode(); }
       if (arrowDrawMode)   { stopArrowDraw(); document.getElementById("drawArrow").classList.add("active"); startArrowDraw(); }
+      if (terrainDrawMode) { ensureTerrainSketch(); terrainSketchWidget.create("polygon"); }
       if (editFeatureMode) {
         if (clickHandle) { clickHandle.remove(); clickHandle = null; }
         clickHandle = view.on("click", handleEditFeatureClick);
@@ -1565,12 +1567,37 @@
     const TERRAIN_RADIUS_M = 2000; // analyse a 4 km × 4 km area (±2 km from soldier)
     const TERRAIN_GRID     = 22;   // 22×22 = 484 cells ≈ 182 m per cell side
 
-    let terrainActive = false;
+    let terrainActive    = false;
+    let terrainDrawMode  = false; // true while waiting for user to finish drawing the polygon
+    let terrainSketchWidget = null;
 
-    // GraphicsLayer that holds the coloured elevation cells.
-    // listMode:"hide" keeps it out of any layer-list widget.
+    // GraphicsLayer for the coloured elevation cells (results)
     const terrainLayer = new GraphicsLayer({ title: "_terrain", listMode: "hide" });
+    // GraphicsLayer for the temporary polygon the user draws (cleared after analysis)
+    const terrainSketchLayer = new GraphicsLayer({ listMode: "hide" });
     map.add(terrainLayer);
+    map.add(terrainSketchLayer);
+
+    // Creates (or recreates) the Sketch widget bound to the current view.
+    // Called when the user enters terrain-draw mode, and again after a 2D↔3D switch.
+    function ensureTerrainSketch() {
+      if (terrainSketchWidget) { terrainSketchWidget.destroy(); terrainSketchWidget = null; }
+      terrainSketchWidget = new Sketch({
+        view, layer: terrainSketchLayer, creationMode: "single",
+        visibleElements: {
+          createTools:    { point:false, polyline:false, polygon:false, rectangle:false, circle:false },
+          selectionTools: { "rectangle-selection":false, "lasso-selection":false },
+          settingsMenu: false, undoRedoMenu: false,
+        },
+      });
+      terrainSketchWidget.on("create", evt => {
+        if (evt.state === "cancel") { terrainDrawMode = false; document.getElementById("btnTerrain").classList.remove("active"); return; }
+        if (evt.state !== "complete") return;
+        terrainSketchLayer.removeAll();
+        terrainDrawMode = false;
+        runTerrainAnalysis(evt.graphic.geometry);
+      });
+    }
 
     // ── Colour scale: elevation delta [metres] → [R, G, B, alpha_0-1] ────────────
     // Opacity < 1 so the underlying satellite/terrain imagery shows through.
@@ -1584,88 +1611,105 @@
       return              [  0,   0, 139, 0.78];   // dark blue  – very strong advantage
     }
 
-    // ── Main analysis function ────────────────────────────────────────────────────
-    async function runTerrainAnalysis() {
-      // Guard: we need a confirmed GPS fix before we can relativise elevations
-      if (!lastLocationPos) {
-        setStatus("יש להפעיל מיקום עצמי תחילה ולהמתין לקליטה", "error");
-        stopTerrainAnalysis(); return;
+    // ── Ray-casting point-in-polygon test ────────────────────────────────────────
+    // Used to clip the cell grid to the user's drawn polygon so only cells whose
+    // centre lies inside the polygon receive a colour.  Works with any convex or
+    // concave polygon; uses the first ring only (exterior boundary).
+    function pointInPolygon(px, py, rings) {
+      let inside = false;
+      const ring = rings[0];
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1];
+        const xj = ring[j][0], yj = ring[j][1];
+        if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi))
+          inside = !inside;
       }
-      const { lon, lat } = lastLocationPos;
+      return inside;
+    }
+
+    // ── Main analysis function ────────────────────────────────────────────────────
+    // Receives the polygon the user just drew, grids its bounding box with
+    // TERRAIN_GRID × TERRAIN_GRID cells, queries all elevations in one round-trip
+    // via Multipoint (NOT Polyline — queryElevation densifies Polylines, which would
+    // corrupt the index mapping), and colours each cell relative to the AVERAGE
+    // elevation of the polygon area (average = reference / "ground level"):
+    //   cell > average → RED  (dominant / שולט)
+    //   cell < average → BLUE (dominated / נשלט)
+    async function runTerrainAnalysis(inputPolygon) {
       setStatus("⛰ מנתח גובה שטח...");
       terrainLayer.removeAll();
+      terrainActive = true;
+      document.getElementById("btnTerrain").classList.add("active");
+      document.getElementById("terrainLegend").style.display = "";
 
       try {
-        // ── Step 1: Build the flat sample-point list ──────────────────────────────
-        // Convert analysis radius from metres into geographic degrees.
-        // cos(lat) accounts for longitude meridian convergence at non-equator latitudes.
-        const latRad    = lat * Math.PI / 180;
-        const cellSizeM = (TERRAIN_RADIUS_M * 2) / TERRAIN_GRID; // metres per cell
-        const dLat      = cellSizeM / 111320;                     // degrees per cell (N-S)
-        const dLon      = cellSizeM / (111320 * Math.cos(latRad));// degrees per cell (E-W)
-        const half      = TERRAIN_GRID / 2;
+        // ── Step 1: Normalise to WGS84 ──────────────────────────────────────────
+        // Sketch widget can produce Web-Mercator geometry when in 3D; convert it.
+        let poly = inputPolygon;
+        if (poly.spatialReference?.wkid !== 4326)
+          poly = webMercatorUtils.webMercatorToGeographic(poly);
 
-        // Index 0 = soldier's own position (elevation reference).
-        // Indices 1…N² = the grid sample points.
-        const samplePts = [[lon, lat]];
+        // ── Step 2: Build grid of cell centres inside the polygon ───────────────
+        // We grid the polygon's axis-aligned bounding box, then discard any cell
+        // whose centre falls outside the polygon boundary (pointInPolygon test).
+        const ext  = poly.extent;
+        const dLon = (ext.xmax - ext.xmin) / TERRAIN_GRID; // degrees per column
+        const dLat = (ext.ymax - ext.ymin) / TERRAIN_GRID; // degrees per row
+
+        const cells = []; // { row, col, lon, lat }
         for (let row = 0; row < TERRAIN_GRID; row++) {
           for (let col = 0; col < TERRAIN_GRID; col++) {
-            samplePts.push([
-              lon + (col - half + 0.5) * dLon,
-              lat + (row - half + 0.5) * dLat,
-            ]);
+            const cLon = ext.xmin + (col + 0.5) * dLon;
+            const cLat = ext.ymin + (row + 0.5) * dLat;
+            if (pointInPolygon(cLon, cLat, poly.rings))
+              cells.push({ row, col, lon: cLon, lat: cLat });
           }
         }
 
-        // ── Step 2: Single elevation query for all points ─────────────────────────
-        // Encoding all points as one Polyline lets queryElevation fetch every Z value
-        // in a single server round-trip instead of N² individual requests.
-        // demResolution:"finest-contiguous" requests the highest-resolution DEM tile
-        // that covers the entire polyline without gaps.
+        if (!cells.length) {
+          setStatus("הפוליגון קטן מדי, נסה אזור גדול יותר", "error");
+          stopTerrainAnalysis(); return;
+        }
+
+        // ── Step 3: Query all cell elevations in ONE server request ──────────────
+        // Multipoint is the correct geometry type for batch point queries.
+        // (Polyline would be densified by the API, corrupting vertex-index mapping.)
         const result = await map.ground.queryElevation(
-          new Polyline({ paths: [samplePts], spatialReference: SR_WGS84 }),
-          { demResolution: "finest-contiguous" }
+          new Multipoint({ points: cells.map(c => [c.lon, c.lat]), spatialReference: SR_WGS84 })
         );
+        // result.geometry.points is [[x, y, z], ...] in the same order as input
+        const zValues = result.geometry.points.map(p => p[2]);
 
-        // Returned geometry is the same Polyline with Z added to every vertex.
-        const zVals = result.geometry.paths[0]; // [[lon, lat, z], …]
-        const refZ  = zVals[0][2];              // soldier's elevation in metres ASL
+        // ── Step 4: Compute reference elevation = average across all cells ───────
+        // Using the average as the "ground level" gives a balanced view:
+        // cells above average = dominant positions (שולט)
+        // cells below average = dominated positions (נשלט)
+        const avgZ = zValues.reduce((s, z) => s + z, 0) / zValues.length;
+        const minZ = Math.min(...zValues);
+        const maxZ = Math.max(...zValues);
 
-        // ── Step 3: Render coloured cell polygons ─────────────────────────────────
-        for (let row = 0; row < TERRAIN_GRID; row++) {
-          for (let col = 0; col < TERRAIN_GRID; col++) {
-            // Vertex index: offset by 1 because index 0 is the soldier reference point
-            const idx  = 1 + row * TERRAIN_GRID + col;
-            const dz   = zVals[idx][2] - refZ; // positive = higher than soldier
-            const rgba = terrainCellColor(dz);
+        // ── Step 5: Render coloured cell polygons ────────────────────────────────
+        cells.forEach((c, i) => {
+          const dz   = zValues[i] - avgZ; // positive = dominant, negative = dominated
+          const rgba = terrainCellColor(dz);
+          if (rgba[3] === 0) return; // skip neutral cells (±5 m from average)
 
-            // Skip neutral cells entirely — avoids rendering hundreds of white quads
-            if (rgba[3] === 0) continue;
+          terrainLayer.add(new Graphic({
+            geometry: new Polygon({
+              rings: [[
+                [c.lon - dLon * 0.5, c.lat - dLat * 0.5],
+                [c.lon + dLon * 0.5, c.lat - dLat * 0.5],
+                [c.lon + dLon * 0.5, c.lat + dLat * 0.5],
+                [c.lon - dLon * 0.5, c.lat + dLat * 0.5],
+                [c.lon - dLon * 0.5, c.lat - dLat * 0.5],
+              ]],
+              spatialReference: SR_WGS84,
+            }),
+            symbol: { type:"simple-fill", color:rgba, outline:{ width:0 } },
+          }));
+        });
 
-            // Rectangle centred on the sample point; edges touch adjacent cells
-            const cLon = lon + (col - half + 0.5) * dLon;
-            const cLat = lat + (row - half + 0.5) * dLat;
-            terrainLayer.add(new Graphic({
-              geometry: new Polygon({
-                rings: [[
-                  [cLon - dLon * 0.5, cLat - dLat * 0.5],
-                  [cLon + dLon * 0.5, cLat - dLat * 0.5],
-                  [cLon + dLon * 0.5, cLat + dLat * 0.5],
-                  [cLon - dLon * 0.5, cLat + dLat * 0.5],
-                  [cLon - dLon * 0.5, cLat - dLat * 0.5], // close ring
-                ]],
-                spatialReference: SR_WGS84,
-              }),
-              symbol: {
-                type   : "simple-fill",
-                color  : rgba,          // [R, G, B, alpha]
-                outline: { width: 0 },  // no borders between cells for cleaner look
-              },
-            }));
-          }
-        }
-
-        setStatus(`⛰ ניתוח הושלם · גובה עצמי ${Math.round(refZ)} מ' מעל פני הים`, "ok");
+        setStatus(`⛰ ניתוח הושלם · גובה ממוצע ${Math.round(avgZ)}מ' · פרש גבהים ${Math.round(maxZ - minZ)}מ'`, "ok");
 
       } catch (err) {
         setStatus("שגיאה בניתוח גובה: " + err.message, "error");
@@ -1673,22 +1717,28 @@
       }
     }
 
+    // Enter polygon-draw mode; analysis runs automatically when polygon is closed
     function startTerrainAnalysis() {
-      terrainActive = true;
+      terrainDrawMode = true;
       document.getElementById("btnTerrain").classList.add("active");
       document.getElementById("terrainLegend").style.display = "";
-      runTerrainAnalysis();
+      ensureTerrainSketch();
+      terrainSketchWidget.create("polygon");
+      setStatus("🖊 סמן פוליגון לניתוח גובה — לחץ כדי להוסיף פינות, לחץ פעמיים לסיום");
     }
 
     function stopTerrainAnalysis() {
-      terrainActive = false;
+      terrainActive   = false;
+      terrainDrawMode = false;
+      if (terrainSketchWidget) { try { terrainSketchWidget.cancel(); } catch(_) {} terrainSketchWidget.destroy(); terrainSketchWidget = null; }
+      terrainSketchLayer.removeAll();
       document.getElementById("btnTerrain").classList.remove("active");
       document.getElementById("terrainLegend").style.display = "none";
       terrainLayer.removeAll();
     }
 
     document.getElementById("btnTerrain").onclick = () => {
-      if (terrainActive) stopTerrainAnalysis();
+      if (terrainActive || terrainDrawMode) stopTerrainAnalysis();
       else startTerrainAnalysis();
     };
 
