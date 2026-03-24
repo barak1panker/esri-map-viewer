@@ -587,15 +587,17 @@
 
       sketchWidget.on("create", evt => {
         if (evt.state !== "complete") return;
-        sketchLayer.removeAll();
-        // Terrain analysis intercepts the polygon before the normal modal flow
+        // Terrain analysis intercepts polygon draw before the normal modal flow
         if (terrainDrawMode) {
           terrainDrawMode = false;
+          sketchLayer.removeAll();
           runTerrainAnalysis(evt.graphic.geometry);
           return;
         }
+        // Normal edit flow: snapshot geometry BEFORE clearing the layer
         pendingGeom = evt.graphic.geometry;
         pendingType = pendingGeom.type === "polyline" ? "polyline" : pendingGeom.type;
+        sketchLayer.removeAll();
         showModal(pendingType);
       });
     }
@@ -1047,75 +1049,66 @@
       }
     }
 
-    // fetchLocation — uses watchPosition so the device has time to refine GPS accuracy.
-    // Updates the marker in real-time as accuracy improves.
-    // Accepts the fix when accuracy ≤ 50 m OR after a 20-second deadline.
+    // fetchLocation — dual-request approach for maximum reliability:
+    //   Step 1: getCurrentPosition(low-accuracy) — fires within seconds on ANY device
+    //           (uses IP/WiFi geolocation, no GPS hardware required)
+    //   Step 2: watchPosition(high-accuracy) — refines if GPS is available
+    //           On desktop without GPS this fails silently; step 1 already gave a position.
+    // Accepts the high-accuracy fix when ≤ 50 m, or after 20 s takes whatever we have.
     function fetchLocation(goTo) {
       if (!navigator.geolocation) { setStatus("הדפדפן לא תומך ב-GPS","error"); return; }
-
-      // Cancel any previous watch still running from the last call
+      // Cancel any watch still running from a previous call
       if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
 
       setStatus("📡 מאתר מיקום...");
-      let bestPos = null;   // best (most accurate) reading seen so far
-      let settled = false;  // true once we've committed to a final fix
+      let best = null; // best position seen so far (lowest accuracy value = most precise)
 
-      // Commit to a position: stop the watch, display the final fix
-      function accept(pos, isFinal) {
-        if (settled) return;
-        if (isFinal) {
-          settled = true;
-          if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
-        }
-        const lon = pos.coords.longitude, lat = pos.coords.latitude;
-        const acc = Math.round(pos.coords.accuracy);
+      // Show a position on the map; only update if it's more accurate than what we have
+      function showPos(pos, final) {
+        if (!final && best && pos.coords.accuracy >= best.coords.accuracy) return;
+        best = pos;
+        const { longitude: lon, latitude: lat, accuracy } = pos.coords;
+        const acc = Math.round(accuracy);
         const lbl = acc >= 1000 ? `±${(acc/1000).toFixed(1)}ק"מ` : `±${acc}מ'`;
-        applyPositionGraphic(lon, lat, acc, isFinal && goTo);
-        if (isFinal) setStatus(`📍 מיקום עודכן · דיוק ${lbl}`, "ok");
-        else         setStatus(`📡 מאתר... דיוק ${lbl} — ממתין לשיפור`);
+        applyPositionGraphic(lon, lat, acc, final && goTo);
+        setStatus(final ? `📍 מיקום עודכן · דיוק ${lbl}` : `📡 מאתר... · דיוק ${lbl}`, final ? "ok" : "");
       }
 
-      // Hard deadline: if device cannot reach ≤50 m accuracy in 20 s, take best seen
+      function finalize(pos) {
+        if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
+        showPos(pos, true);
+      }
+
+      // Step 1 — Quick fix: low-accuracy, works immediately on any device/network
+      navigator.geolocation.getCurrentPosition(
+        pos => showPos(pos, false),
+        () => {}, // silently ignore — step 2 might still succeed
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+      );
+
+      // Deadline: after 20 s accept whatever we have (or report error if nothing)
       const deadline = setTimeout(() => {
-        if (settled) return;
-        if (bestPos) accept(bestPos, true);
-        else { settled = true; setStatus("לא נמצא מיקום","error"); }
+        if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
+        if (best) showPos(best, true);
+        else setStatus("מיקום לא זמין", "error");
       }, 20000);
 
+      // Step 2 — High-accuracy watch: refines when GPS / good WiFi is available
       locWatchId = navigator.geolocation.watchPosition(
         pos => {
-          if (settled) return;
-          // Keep the reading only if it is more accurate than what we've seen
-          if (!bestPos || pos.coords.accuracy < bestPos.coords.accuracy) {
-            bestPos = pos;
-            accept(pos, false); // live update, not yet final
-          }
-          // Early exit: accuracy is good enough — no need to wait for the deadline
-          if (pos.coords.accuracy <= 50) { clearTimeout(deadline); accept(pos, true); }
+          showPos(pos, false);
+          // Good enough — stop watching early
+          if (pos.coords.accuracy <= 50) { clearTimeout(deadline); finalize(pos); }
         },
         err => {
-          clearTimeout(deadline);
-          if (settled) return;
+          // Only abort tracking on explicit permission denial (code 1).
+          // GPS unavailable (code 2) or timeout (code 3) are handled gracefully:
+          // step 1 already provided a network-based position.
           if (err.code === 1) {
-            // Permission denied — nothing we can do
-            settled = true;
+            clearTimeout(deadline);
             if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
-            setStatus("שגיאת מיקום: הרשאת מיקום נדחתה", "error");
+            setStatus("הרשאת מיקום נדחתה", "error");
             stopLocationTracking();
-          } else {
-            // High-accuracy unavailable (no GPS hardware / Windows location off) —
-            // fall back to network/IP geolocation which works on any device
-            if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
-            setStatus("📡 GPS לא זמין — מנסה מיקום רשת...");
-            navigator.geolocation.getCurrentPosition(
-              pos => { if (!settled) accept(pos, true); },
-              () => {
-                settled = true;
-                setStatus("מיקום לא זמין", "error");
-                stopLocationTracking();
-              },
-              { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
-            );
           }
         },
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -1596,16 +1589,16 @@
     const terrainLayer = new GraphicsLayer({ title: "_terrain", listMode: "hide" });
     map.add(terrainLayer);
 
-    // ── Colour scale: elevation delta [metres] → [R, G, B, alpha_0-1] ────────────
-    // Opacity < 1 so the underlying satellite/terrain imagery shows through.
+    // Colour scale: ΔZ relative to polygon average [metres].
+    // Neutral zone reduced to ±2 m so flat terrain still shows meaningful gradients.
     function terrainCellColor(dz) {
-      if (dz >  50) return [139,   0,   0, 0.78]; // dark red   – very strong threat
-      if (dz >  20) return [220,  53,  69, 0.68]; // red        – clear disadvantage
-      if (dz >   5) return [255, 140,   0, 0.50]; // orange     – slight disadvantage
-      if (dz >= -5) return [  0,   0,   0, 0.00]; // neutral    – transparent (skip)
-      if (dz >= -20) return [135, 206, 235, 0.50]; // light blue – slight advantage
-      if (dz >= -50) return [ 30, 144, 255, 0.68]; // blue       – clear advantage
-      return              [  0,   0, 139, 0.78];   // dark blue  – very strong advantage
+      if (dz >  30) return [139,   0,   0, 0.78]; // dark red   – very dominant
+      if (dz >  10) return [220,  53,  69, 0.68]; // red        – dominant
+      if (dz >   2) return [255, 140,   0, 0.50]; // orange     – slightly dominant
+      if (dz >= -2) return [  0,   0,   0, 0.00]; // ±2 m neutral – transparent
+      if (dz >= -10) return [135, 206, 235, 0.50]; // light blue – slightly dominated
+      if (dz >= -30) return [ 30, 144, 255, 0.68]; // blue       – dominated
+      return               [  0,   0, 139, 0.78];  // dark blue  – very dominated
     }
 
     // ── Ray-casting point-in-polygon test ────────────────────────────────────────
@@ -1685,12 +1678,19 @@
         const minZ = Math.min(...zValues);
         const maxZ = Math.max(...zValues);
 
-        // ── Step 5: Render coloured cell polygons ────────────────────────────────
-        cells.forEach((c, i) => {
-          const dz   = zValues[i] - avgZ; // positive = dominant, negative = dominated
-          const rgba = terrainCellColor(dz);
-          if (rgba[3] === 0) return; // skip neutral cells (±5 m from average)
+        // ── Step 5: Draw polygon outline so the analysed area is always visible ───
+        terrainLayer.add(new Graphic({
+          geometry: poly,
+          symbol: { type:"simple-fill", color:[0,0,0,0], outline:{ color:[255,220,0,0.9], width:2 } },
+        }));
 
+        // ── Step 6: Render coloured cell polygons ────────────────────────────────
+        let coloredCount = 0;
+        cells.forEach((c, i) => {
+          const dz   = zValues[i] - avgZ; // positive = dominant (שולט), negative = dominated (נשלט)
+          const rgba = terrainCellColor(dz);
+          if (rgba[3] === 0) return; // neutral cells – transparent, skip rendering
+          coloredCount++;
           terrainLayer.add(new Graphic({
             geometry: new Polygon({
               rings: [[
@@ -1706,7 +1706,9 @@
           }));
         });
 
-        setStatus(`⛰ ניתוח הושלם · גובה ממוצע ${Math.round(avgZ)}מ' · פרש גבהים ${Math.round(maxZ - minZ)}מ'`, "ok");
+        const rangeM = Math.round(maxZ - minZ);
+        const flatMsg = coloredCount === 0 ? " · שטח שטוח (פחות מ-2מ' הפרש)" : "";
+        setStatus(`⛰ ניתוח הושלם · גובה ממוצע ${Math.round(avgZ)}מ' · פרש ${rangeM}מ'${flatMsg}`, "ok");
 
       } catch (err) {
         setStatus("שגיאה בניתוח גובה: " + err.message, "error");
