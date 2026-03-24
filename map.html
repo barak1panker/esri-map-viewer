@@ -1135,12 +1135,14 @@
       else startLocationTracking();
     };
 
-    // start location tracking automatically on load
-    startLocationTracking();
-
     // ── Status ────────────────────────────────────────────────────────────────
+    // Must be defined BEFORE startLocationTracking() because fetchLocation calls
+    // setStatus synchronously on the first line, before any async callbacks.
     const statusEl = document.getElementById("status");
     function setStatus(msg, type) { statusEl.textContent = msg; statusEl.className = type||""; }
+
+    // start location tracking automatically on load
+    startLocationTracking();
 
     // ── Modal helpers ─────────────────────────────────────────────────────────
     function showModal(type) {
