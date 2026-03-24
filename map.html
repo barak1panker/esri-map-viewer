@@ -289,6 +289,7 @@
     <div id="lineFields" style="display:none">
       <div class="form-section">
         <div class="sec-label">סגנון קו</div>
+        <div class="form-row"><label>צבע:</label><input type="color" id="lineColor" value="#00eaea"></div>
         <div class="form-row"><label>עובי:</label><input type="range" id="lineWidth" min="1" max="10" value="2"><input type="number" id="lineWidthNum" min="1" max="10" value="2" style="width:45px"></div>
         <div class="form-row"><label>שקיפות:</label><input type="range" id="lineOpacity" min="0" max="1" step="0.05" value="1"><input type="number" id="lineOpacityNum" min="0" max="1" step="0.05" value="1" style="width:50px"></div>
       </div>
@@ -646,6 +647,7 @@
         });
       } else if (geomType === "LineString") {
         const line = p.line || {};
+        if (line.color) document.getElementById("lineColor").value = line.color;
         document.getElementById("lineWidth").value      = line.width || 2;
         document.getElementById("lineWidthNum").value   = line.width || 2;
         document.getElementById("lineOpacity").value    = line.opacity ?? 1;
@@ -727,7 +729,13 @@
 
     // ── Arrow drag-draw ───────────────────────────────────────────────────────
     // CIM arrow symbol: thick line + large filled triangle arrowhead at end
-    function makeCimArrow(strokeWidth) {
+    function hexToRgb(hex) {
+      const h = hex.replace("#","");
+      return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16), 255];
+    }
+
+    function makeCimArrow(strokeWidth, hexColor) {
+      const c = hexToRgb(hexColor || "#ff9500");
       return {
         type: "cim",
         data: {
@@ -738,7 +746,7 @@
               {
                 type: "CIMSolidStroke", enable: true,
                 capStyle: "Round", joinStyle: "Round", miterLimit: 10,
-                width: strokeWidth, color: [255, 149, 0, 255]
+                width: strokeWidth, color: c
               },
               {
                 type: "CIMVectorMarker", enable: true, size: 30,
@@ -752,7 +760,7 @@
                   geometry: { rings: [[[-10, -10], [10, 0], [-10, 10], [-10, -10]]] },
                   symbol: {
                     type: "CIMPolygonSymbol",
-                    symbolLayers: [{ type: "CIMSolidFill", enable: true, color: [255, 149, 0, 255] }]
+                    symbolLayers: [{ type: "CIMSolidFill", enable: true, color: c }]
                   }
                 }],
                 respectFrame: true
@@ -762,7 +770,7 @@
         }
       };
     }
-    const ARROW_PREVIEW_SYM = makeCimArrow(2);
+    const ARROW_PREVIEW_SYM = makeCimArrow(2, "#ff9500");
 
     function startArrowDraw() {
       arrowDrawMode = true;
@@ -1063,6 +1071,7 @@
         ["lineText","lineUpText","lineDownText"].forEach(id => {
           document.getElementById(id).value = "";
         });
+        document.getElementById("lineColor").value       = type === "arrow" ? "#ff9500" : "#00eaea";
         document.getElementById("lineWidth").value      = 2;  document.getElementById("lineWidthNum").value   = 2;
         document.getElementById("lineOpacity").value    = 1;  document.getElementById("lineOpacityNum").value = 1;
         document.getElementById("lineTextColor").value  = type === "arrow" ? "#ff9500" : "#00eaea";
@@ -1109,8 +1118,9 @@
     document.getElementById("confirmFeature").onclick = async () => {
       if (!pendingGeom && editingFeatureIdx === null) return;
       // Snapshot and clear immediately to prevent double-fire
-      const geomSnapshot = pendingGeom;
-      const typeSnapshot = pendingType;
+      const geomSnapshot    = pendingGeom;
+      const typeSnapshot    = pendingType;
+      const wasEditing      = editingFeatureIdx !== null;
       pendingGeom = null;
       pendingType = null;
 
@@ -1157,6 +1167,7 @@
         const lineProps = {
           icon_url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E",
           line: {
+            color:   document.getElementById("lineColor").value,
             width:   parseFloat(document.getElementById("lineWidthNum").value)   || 2,
             opacity: parseFloat(document.getElementById("lineOpacityNum").value) || 1,
             text: Object.keys(textObj).length ? textObj : undefined,
@@ -1189,6 +1200,8 @@
       }
       hideModal();
       await loadGeoJSON(currentGeoJSON);
+      // After adding (not editing) an arrow, stay in arrow-draw mode for next arrow
+      if (typeSnapshot === "arrow" && !wasEditing) setDrawTool("arrow");
     };
 
     // ── Undo last ─────────────────────────────────────────────────────────────
@@ -1302,58 +1315,52 @@
       });
     }
 
-    // ── Line Layer ────────────────────────────────────────────────────────────
-    function _lineGraphics(features) {
-      return features.map((f,i)=>{
-        const p=f.properties||{}, line=p.line||{}, txt=line.text||{};
-        return new Graphic({
-          geometry: new Polyline({ paths:[f.geometry.coordinates.map(c=>[c[0],c[1]])], spatialReference:SR_WGS84 }),
-          attributes:{ OBJECTID:i, line_width:line.width||2, line_opacity:line.opacity??1,
-            line_text:txt.text||"", line_up_text:txt.upText||"", line_down_text:txt.downText||"",
-            text_color:txt.color||"#ffffff", halo_color:txt.haloColor||"#000000", halo_width:txt.haloWidth||1 }
-        });
-      });
+    // ── Line / Arrow Layers (GraphicsLayer — one Graphic per feature) ─────────
+    function _midpoint(coords) {
+      return coords[Math.floor((coords.length - 1) / 2)];
     }
-    const _lineFields = [
-      {name:"OBJECTID",type:"oid"},{name:"line_width",type:"double"},{name:"line_opacity",type:"double"},
-      {name:"line_text",type:"string"},{name:"line_up_text",type:"string"},{name:"line_down_text",type:"string"},
-      {name:"text_color",type:"string"},{name:"halo_color",type:"string"},{name:"halo_width",type:"double"},
-    ];
-    const _lineLabelInfo = [
-      {field:"line_text",placement:"center-along"},
-      {field:"line_up_text",placement:"above-along"},
-      {field:"line_down_text",placement:"below-along"},
-    ].map(({field,placement})=>({
-      labelExpressionInfo:{ expression:`$feature["${field}"]` },
-      where:`${field} <> ''`,
-      symbol:{ type:"text", color:"white", haloColor:"black", haloSize:"1.5px", font:{size:11} },
-      labelPlacement:placement, minScale:150000, maxScale:0,
-    }));
+
+    function _addLineLabel(gl, coords, txt, defaultColor) {
+      if (!txt?.text) return;
+      const mid = _midpoint(coords);
+      gl.add(new Graphic({
+        geometry: new Point({ longitude: mid[0], latitude: mid[1], spatialReference: SR_WGS84 }),
+        symbol: {
+          type: "text", text: txt.text,
+          color: txt.color || defaultColor || "white",
+          haloColor: txt.haloColor || "black",
+          haloSize: (txt.haloWidth || 1.5) + "px",
+          font: { size: 11 },
+        },
+      }));
+    }
 
     function buildLineLayer(features) {
       if (!features.length) return null;
-      return new FeatureLayer({
-        title:"קווים", source:_lineGraphics(features), objectIdField:"OBJECTID",
-        geometryType:"polyline", spatialReference:SR_WGS84, fields:_lineFields,
-        renderer:{
-          type:"simple",
-          symbol:{ type:"simple-line", color:"#00eaea", width:1, style:"solid" },
-          visualVariables:[{ type:"size", field:"line_width", minDataValue:1, maxDataValue:10, minSize:1, maxSize:10 }],
-        },
-        labelsVisible:true, labelingInfo:_lineLabelInfo,
-        elevationInfo:{ mode:"relative-to-scene" },
+      const gl = new GraphicsLayer({ title:"קווים", elevationInfo:{ mode:"relative-to-scene" } });
+      features.forEach(f => {
+        const line = f.properties?.line || {};
+        gl.add(new Graphic({
+          geometry: new Polyline({ paths:[f.geometry.coordinates.map(c=>[c[0],c[1]])], spatialReference:SR_WGS84 }),
+          symbol: { type:"simple-line", color: line.color || "#00eaea", width: line.width || 2, style:"solid" },
+        }));
+        _addLineLabel(gl, f.geometry.coordinates, line.text, line.color || "#00eaea");
       });
+      return gl;
     }
 
     function buildArrowLayer(features) {
       if (!features.length) return null;
-      return new FeatureLayer({
-        title:"חצים", source:_lineGraphics(features), objectIdField:"OBJECTID",
-        geometryType:"polyline", spatialReference:SR_WGS84, fields:_lineFields,
-        renderer:{ type:"simple", symbol:makeCimArrow(2) },
-        labelsVisible:true, labelingInfo:_lineLabelInfo,
-        elevationInfo:{ mode:"relative-to-scene" },
+      const gl = new GraphicsLayer({ title:"חצים", elevationInfo:{ mode:"relative-to-scene" } });
+      features.forEach(f => {
+        const line = f.properties?.line || {};
+        gl.add(new Graphic({
+          geometry: new Polyline({ paths:[f.geometry.coordinates.map(c=>[c[0],c[1]])], spatialReference:SR_WGS84 }),
+          symbol: makeCimArrow(line.width || 2, line.color || "#ff9500"),
+        }));
+        _addLineLabel(gl, f.geometry.coordinates, line.text, line.color || "#ff9500");
       });
+      return gl;
     }
 
     // ── Polygon Layer ─────────────────────────────────────────────────────────
