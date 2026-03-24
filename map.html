@@ -558,10 +558,10 @@
       }
 
       // Rebind Sketch / delete-click / edit-feature / arrow-draw to the newly active view
-      if (editMode)        createSketch();
+      if (editMode || terrainDrawMode) createSketch();   // single widget creation even when both modes are active
       if (deleteMode)      { exitDeleteMode(); enterDeleteMode(); }
       if (arrowDrawMode)   { stopArrowDraw(); document.getElementById("drawArrow").classList.add("active"); startArrowDraw(); }
-      if (terrainDrawMode) { createSketch(); sketchWidget.create("polygon"); }
+      if (terrainDrawMode) sketchWidget.create("polygon");
       if (editFeatureMode) {
         if (clickHandle) { clickHandle.remove(); clickHandle = null; }
         clickHandle = view.on("click", handleEditFeatureClick);
