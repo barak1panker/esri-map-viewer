@@ -561,7 +561,7 @@
       if (editMode)        createSketch();
       if (deleteMode)      { exitDeleteMode(); enterDeleteMode(); }
       if (arrowDrawMode)   { stopArrowDraw(); document.getElementById("drawArrow").classList.add("active"); startArrowDraw(); }
-      if (terrainDrawMode) { ensureTerrainSketch(); terrainSketchWidget.create("polygon"); }
+      if (terrainDrawMode) { createSketch(); sketchWidget.create("polygon"); }
       if (editFeatureMode) {
         if (clickHandle) { clickHandle.remove(); clickHandle = null; }
         clickHandle = view.on("click", handleEditFeatureClick);
@@ -587,9 +587,15 @@
 
       sketchWidget.on("create", evt => {
         if (evt.state !== "complete") return;
+        sketchLayer.removeAll();
+        // Terrain analysis intercepts the polygon before the normal modal flow
+        if (terrainDrawMode) {
+          terrainDrawMode = false;
+          runTerrainAnalysis(evt.graphic.geometry);
+          return;
+        }
         pendingGeom = evt.graphic.geometry;
         pendingType = pendingGeom.type === "polyline" ? "polyline" : pendingGeom.type;
-        sketchLayer.removeAll();
         showModal(pendingType);
       });
     }
@@ -1090,13 +1096,29 @@
         err => {
           clearTimeout(deadline);
           if (settled) return;
-          settled = true;
-          if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
-          const msg = err.code === 1 ? "הרשאת מיקום נדחתה" : err.code === 2 ? "מיקום לא זמין" : "תם הזמן לאיתור";
-          setStatus("שגיאת מיקום: " + msg, "error");
-          stopLocationTracking();
+          if (err.code === 1) {
+            // Permission denied — nothing we can do
+            settled = true;
+            if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
+            setStatus("שגיאת מיקום: הרשאת מיקום נדחתה", "error");
+            stopLocationTracking();
+          } else {
+            // High-accuracy unavailable (no GPS hardware / Windows location off) —
+            // fall back to network/IP geolocation which works on any device
+            if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
+            setStatus("📡 GPS לא זמין — מנסה מיקום רשת...");
+            navigator.geolocation.getCurrentPosition(
+              pos => { if (!settled) accept(pos, true); },
+              () => {
+                settled = true;
+                setStatus("מיקום לא זמין", "error");
+                stopLocationTracking();
+              },
+              { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+            );
+          }
         },
-        { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     }
 
@@ -1567,37 +1589,12 @@
     const TERRAIN_RADIUS_M = 2000; // analyse a 4 km × 4 km area (±2 km from soldier)
     const TERRAIN_GRID     = 22;   // 22×22 = 484 cells ≈ 182 m per cell side
 
-    let terrainActive    = false;
-    let terrainDrawMode  = false; // true while waiting for user to finish drawing the polygon
-    let terrainSketchWidget = null;
+    let terrainActive   = false;
+    let terrainDrawMode = false; // true while waiting for user to finish drawing the polygon
 
     // GraphicsLayer for the coloured elevation cells (results)
     const terrainLayer = new GraphicsLayer({ title: "_terrain", listMode: "hide" });
-    // GraphicsLayer for the temporary polygon the user draws (cleared after analysis)
-    const terrainSketchLayer = new GraphicsLayer({ listMode: "hide" });
     map.add(terrainLayer);
-    map.add(terrainSketchLayer);
-
-    // Creates (or recreates) the Sketch widget bound to the current view.
-    // Called when the user enters terrain-draw mode, and again after a 2D↔3D switch.
-    function ensureTerrainSketch() {
-      if (terrainSketchWidget) { terrainSketchWidget.destroy(); terrainSketchWidget = null; }
-      terrainSketchWidget = new Sketch({
-        view, layer: terrainSketchLayer, creationMode: "single",
-        visibleElements: {
-          createTools:    { point:false, polyline:false, polygon:false, rectangle:false, circle:false },
-          selectionTools: { "rectangle-selection":false, "lasso-selection":false },
-          settingsMenu: false, undoRedoMenu: false,
-        },
-      });
-      terrainSketchWidget.on("create", evt => {
-        if (evt.state === "cancel") { terrainDrawMode = false; document.getElementById("btnTerrain").classList.remove("active"); return; }
-        if (evt.state !== "complete") return;
-        terrainSketchLayer.removeAll();
-        terrainDrawMode = false;
-        runTerrainAnalysis(evt.graphic.geometry);
-      });
-    }
 
     // ── Colour scale: elevation delta [metres] → [R, G, B, alpha_0-1] ────────────
     // Opacity < 1 so the underlying satellite/terrain imagery shows through.
@@ -1717,21 +1714,22 @@
       }
     }
 
-    // Enter polygon-draw mode; analysis runs automatically when polygon is closed
+    // Enter polygon-draw mode; analysis runs automatically when polygon is closed.
+    // Reuses the existing sketchWidget so there is never more than one Sketch
+    // widget on the view at a time (two Sketch widgets on the same view conflict).
     function startTerrainAnalysis() {
       terrainDrawMode = true;
       document.getElementById("btnTerrain").classList.add("active");
       document.getElementById("terrainLegend").style.display = "";
-      ensureTerrainSketch();
-      terrainSketchWidget.create("polygon");
-      setStatus("🖊 סמן פוליגון לניתוח גובה — לחץ כדי להוסיף פינות, לחץ פעמיים לסיום");
+      if (!sketchWidget) createSketch(); // create widget if edit mode was never opened
+      sketchWidget.create("polygon");
+      setStatus("🖊 סמן פוליגון לניתוח גובה — לחץ להוסיף פינות, לחץ פעמיים לסיום");
     }
 
     function stopTerrainAnalysis() {
+      if (terrainDrawMode && sketchWidget) { try { sketchWidget.cancel(); } catch(_) {} }
       terrainActive   = false;
       terrainDrawMode = false;
-      if (terrainSketchWidget) { try { terrainSketchWidget.cancel(); } catch(_) {} terrainSketchWidget.destroy(); terrainSketchWidget = null; }
-      terrainSketchLayer.removeAll();
       document.getElementById("btnTerrain").classList.remove("active");
       document.getElementById("terrainLegend").style.display = "none";
       terrainLayer.removeAll();
