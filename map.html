@@ -1303,58 +1303,55 @@
     }
 
     // ── Line Layer ────────────────────────────────────────────────────────────
-    function buildLineLayer(features) {
-      if (!features.length) return null;
-      const graphics = features.map((f,i)=>{
+    function _lineGraphics(features) {
+      return features.map((f,i)=>{
         const p=f.properties||{}, line=p.line||{}, txt=line.text||{};
         return new Graphic({
           geometry: new Polyline({ paths:[f.geometry.coordinates.map(c=>[c[0],c[1]])], spatialReference:SR_WGS84 }),
-          attributes:{ OBJECTID:i, icon_url:p.icon_url||"", line_width:line.width||2,
-            line_opacity:line.opacity??1, line_text:txt.text||"", line_up_text:txt.upText||"",
-            line_down_text:txt.downText||"", text_color:txt.color||"#ffffff",
-            halo_color:txt.haloColor||"#000000", halo_width:txt.haloWidth||1,
-            is_arrow: p.arrow ? 1 : 0 }
+          attributes:{ OBJECTID:i, line_width:line.width||2, line_opacity:line.opacity??1,
+            line_text:txt.text||"", line_up_text:txt.upText||"", line_down_text:txt.downText||"",
+            text_color:txt.color||"#ffffff", halo_color:txt.haloColor||"#000000", halo_width:txt.haloWidth||1 }
         });
       });
-      const lineSym  = { type:"simple-line", color:"#00eaea", width:1, style:"solid" };
-      // CIM arrow: line shaft + large filled triangle head, width driven by visual variable
-      const arrowSym = makeCimArrow(2);
+    }
+    const _lineFields = [
+      {name:"OBJECTID",type:"oid"},{name:"line_width",type:"double"},{name:"line_opacity",type:"double"},
+      {name:"line_text",type:"string"},{name:"line_up_text",type:"string"},{name:"line_down_text",type:"string"},
+      {name:"text_color",type:"string"},{name:"halo_color",type:"string"},{name:"halo_width",type:"double"},
+    ];
+    const _lineLabelInfo = [
+      {field:"line_text",placement:"center-along"},
+      {field:"line_up_text",placement:"above-along"},
+      {field:"line_down_text",placement:"below-along"},
+    ].map(({field,placement})=>({
+      labelExpressionInfo:{ expression:`$feature["${field}"]` },
+      where:`${field} <> ''`,
+      symbol:{ type:"text", color:"white", haloColor:"black", haloSize:"1.5px", font:{size:11} },
+      labelPlacement:placement, minScale:150000, maxScale:0,
+    }));
+
+    function buildLineLayer(features) {
+      if (!features.length) return null;
       return new FeatureLayer({
-        title:"קווים", source:graphics, objectIdField:"OBJECTID",
-        geometryType:"polyline", spatialReference:SR_WGS84,
-        fields:[
-          {name:"OBJECTID",type:"oid"},{name:"icon_url",type:"string"},
-          {name:"line_width",type:"double"},{name:"line_opacity",type:"double"},
-          {name:"line_text",type:"string"},{name:"line_up_text",type:"string"},
-          {name:"line_down_text",type:"string"},{name:"text_color",type:"string"},
-          {name:"halo_color",type:"string"},{name:"halo_width",type:"double"},
-          {name:"is_arrow",type:"integer"},
-        ],
+        title:"קווים", source:_lineGraphics(features), objectIdField:"OBJECTID",
+        geometryType:"polyline", spatialReference:SR_WGS84, fields:_lineFields,
         renderer:{
-          type:"unique-value", field:"is_arrow",
-          uniqueValueInfos:[
-            { value:0, label:"קו",  symbol:lineSym  },
-            { value:1, label:"חץ",  symbol:arrowSym },
-          ],
-          defaultSymbol: lineSym,
-          // Scale line body width from the stored line_width attribute (1–10 px range)
-          visualVariables:[{
-            type:"size", field:"line_width",
-            minDataValue:1, maxDataValue:10,
-            minSize:1,      maxSize:10,
-          }],
+          type:"simple",
+          symbol:{ type:"simple-line", color:"#00eaea", width:1, style:"solid" },
+          visualVariables:[{ type:"size", field:"line_width", minDataValue:1, maxDataValue:10, minSize:1, maxSize:10 }],
         },
-        labelsVisible:true,
-        labelingInfo:[
-          {field:"line_text",placement:"center-along"},
-          {field:"line_up_text",placement:"above-along"},
-          {field:"line_down_text",placement:"below-along"},
-        ].map(({field,placement})=>({
-          labelExpressionInfo:{ expression:`$feature["${field}"]` },
-          where:`${field} <> ''`,
-          symbol:{ type:"text", color:"white", haloColor:"black", haloSize:"1.5px", font:{size:11} },
-          labelPlacement:placement, minScale:150000, maxScale:0,
-        })),
+        labelsVisible:true, labelingInfo:_lineLabelInfo,
+        elevationInfo:{ mode:"relative-to-scene" },
+      });
+    }
+
+    function buildArrowLayer(features) {
+      if (!features.length) return null;
+      return new FeatureLayer({
+        title:"חצים", source:_lineGraphics(features), objectIdField:"OBJECTID",
+        geometryType:"polyline", spatialReference:SR_WGS84, fields:_lineFields,
+        renderer:{ type:"simple", symbol:makeCimArrow(2) },
+        labelsVisible:true, labelingInfo:_lineLabelInfo,
         elevationInfo:{ mode:"relative-to-scene" },
       });
     }
@@ -1392,14 +1389,16 @@
       setStatus(`מעבד ${features.length} פיצ'רים...`);
       [...map.layers].filter(l=>l.title==="eSitMap").forEach(l=>map.remove(l));
 
-      const pts  = features.filter(f=>f.geometry?.type==="Point");
-      const lns  = features.filter(f=>f.geometry?.type==="LineString");
-      const poly = features.filter(f=>f.geometry?.type==="Polygon");
-      const group = new GroupLayer({ title:"eSitMap", visible:true });
+      const pts    = features.filter(f=>f.geometry?.type==="Point");
+      const lns    = features.filter(f=>f.geometry?.type==="LineString" && !f.properties?.arrow);
+      const arrows = features.filter(f=>f.geometry?.type==="LineString" &&  f.properties?.arrow);
+      const poly   = features.filter(f=>f.geometry?.type==="Polygon");
+      const group  = new GroupLayer({ title:"eSitMap", visible:true });
 
-      if (poly.length) { const l=await buildPolygonLayer(poly); if(l) group.add(l); }
-      if (lns.length)  { const l=buildLineLayer(lns);           if(l) group.add(l); }
-      if (pts.length)  { setStatus(`טוען אייקונים (${pts.length} נקודות)...`); const l=await buildPointLayer(pts); if(l) group.add(l); }
+      if (poly.length)   { const l=await buildPolygonLayer(poly);  if(l) group.add(l); }
+      if (lns.length)    { const l=buildLineLayer(lns);             if(l) group.add(l); }
+      if (arrows.length) { const l=buildArrowLayer(arrows);         if(l) group.add(l); }
+      if (pts.length)    { setStatus(`טוען אייקונים (${pts.length} נקודות)...`); const l=await buildPointLayer(pts); if(l) group.add(l); }
 
       map.add(group);
       if (!skipGoTo) {
@@ -1423,7 +1422,7 @@
         opt.textContent = label;
         featGroup.appendChild(opt);
       });
-      setStatus(`✓ ${pts.length} נקודות · ${lns.length} קווים · ${poly.length} פוליגונים`,"ok");
+      setStatus(`✓ ${pts.length} נקודות · ${lns.length} קווים · ${arrows.length} חצים · ${poly.length} פוליגונים`,"ok");
     }
 
     // ── File / URL loaders ────────────────────────────────────────────────────
