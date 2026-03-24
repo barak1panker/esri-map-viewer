@@ -81,6 +81,19 @@
       100% { box-shadow:0 0 0 0 rgba(0,122,255,0); }
     }
     .btn-location.active { background:#007aff; border-color:#007aff; color:white; animation:pulse-loc 2s infinite; }
+    .btn-terrain.active  { background:#8b0000; border-color:#8b0000; color:white; }
+
+    /* Terrain legend overlay */
+    #terrainLegend {
+      position:absolute; bottom:44px; right:16px; z-index:10;
+      background:rgba(20,22,40,0.92); border:1px solid rgba(255,255,255,0.18);
+      border-radius:8px; padding:10px 12px; font-size:11px; color:white;
+      pointer-events:none;
+    }
+    .tl-title { font-weight:bold; margin-bottom:6px; font-size:12px; }
+    .tl-row   { display:flex; align-items:center; gap:7px; margin:3px 0; }
+    .tl-swatch{ width:14px; height:14px; border-radius:3px; flex-shrink:0; border:1px solid rgba(255,255,255,0.2); }
+    .tl-note  { margin-top:8px; color:#aaa; line-height:1.5; border-top:1px solid rgba(255,255,255,0.1); padding-top:6px; }
 
     /* ── Properties Modal ── */
     #propsModal {
@@ -167,6 +180,7 @@
       <button class="btn"        id="btn3d">3D</button>
       <button class="btn btn-edit" id="btnEdit">✏ עריכה</button>
       <button class="btn btn-location" id="btnMyLocation" title="מיקום עצמי (מתעדכן כל 30 שניות)">📍</button>
+      <button class="btn btn-terrain"  id="btnTerrain"   title="ניתוח גובה טקטי">⛰</button>
     </div>
     <div class="divider"></div>
     <label>טעינה מ-URL:</label>
@@ -213,6 +227,19 @@
       <button class="btn btn-load" id="btnJumpCoord" style="white-space:nowrap">קפוץ לקואורד'</button>
     </div>
     <div id="status"></div>
+  </div>
+
+  <!-- ── Terrain analysis legend (bottom-right, shown only when active) ── -->
+  <div id="terrainLegend" style="display:none">
+    <div class="tl-title">ניתוח גובה טקטי</div>
+    <div class="tl-row"><span class="tl-swatch" style="background:#8b0000"></span> גבוה מאוד מעליך (&gt;+50מ')</div>
+    <div class="tl-row"><span class="tl-swatch" style="background:#dc3545"></span> גבוה מעליך (&gt;+20מ')</div>
+    <div class="tl-row"><span class="tl-swatch" style="background:#ff8c00"></span> מעט גבוה (+5–20מ')</div>
+    <div class="tl-row"><span class="tl-swatch" style="background:rgba(128,128,128,0.4)"></span> גובה דומה (±5מ')</div>
+    <div class="tl-row"><span class="tl-swatch" style="background:#87ceeb"></span> מעט נמוך (−5–20מ')</div>
+    <div class="tl-row"><span class="tl-swatch" style="background:#1e90ff"></span> נמוך מתחתיך (−20–50מ')</div>
+    <div class="tl-row"><span class="tl-swatch" style="background:#00008b"></span> נמוך מאוד (&lt;−50מ')</div>
+    <div class="tl-note">אדום = אזור איום (אויב שם מעליך)<br>כחול = יתרון שלך (אתה מעל האזור)</div>
   </div>
 
   <!-- ── Coordinate bar (bottom, full-width) ── -->
@@ -432,6 +459,8 @@
     // Self-location state
     let locationActive     = false;
     let locationIntervalId = null;
+    let locWatchId         = null; // active watchPosition ID; null = not watching
+    let lastLocationPos    = null; // { lon, lat } of last accepted GPS fix (used by terrain analysis)
 
     // Arrow drag-draw state
     let arrowDrawMode    = false;
@@ -990,40 +1019,82 @@
       outline: { color: [0, 122, 255, 0.55], width: 1.5, style: "dash" }
     };
 
+    // Apply a GPS position to the map (update marker + accuracy circle + status)
+    function applyPositionGraphic(lon, lat, acc, goTo) {
+      locationLayer.removeAll();
+      if (acc > 20) {
+        locationLayer.add(new Graphic({
+          geometry: makeAccuracyCircle(lon, lat, acc),
+          symbol: ACC_CIRCLE_SYM,
+        }));
+      }
+      locationLayer.add(new Graphic({
+        geometry: new Point({ longitude: lon, latitude: lat, spatialReference: SR_WGS84 }),
+        symbol: MY_LOC_SYM,
+      }));
+      lastLocationPos = { lon, lat }; // store for terrain analysis
+      if (goTo) {
+        if (is3D) view.goTo({ position:{ longitude:lon, latitude:lat, z:5000 }, tilt:55, heading:0 }, { duration:1200 });
+        else       view.goTo({ center:[lon, lat], zoom:15 }, { duration:1000 });
+      }
+    }
+
+    // fetchLocation — uses watchPosition so the device has time to refine GPS accuracy.
+    // Updates the marker in real-time as accuracy improves.
+    // Accepts the fix when accuracy ≤ 50 m OR after a 20-second deadline.
     function fetchLocation(goTo) {
       if (!navigator.geolocation) { setStatus("הדפדפן לא תומך ב-GPS","error"); return; }
-      navigator.geolocation.getCurrentPosition(
+
+      // Cancel any previous watch still running from the last call
+      if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
+
+      setStatus("📡 מאתר מיקום...");
+      let bestPos = null;   // best (most accurate) reading seen so far
+      let settled = false;  // true once we've committed to a final fix
+
+      // Commit to a position: stop the watch, display the final fix
+      function accept(pos, isFinal) {
+        if (settled) return;
+        if (isFinal) {
+          settled = true;
+          if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
+        }
+        const lon = pos.coords.longitude, lat = pos.coords.latitude;
+        const acc = Math.round(pos.coords.accuracy);
+        const lbl = acc >= 1000 ? `±${(acc/1000).toFixed(1)}ק"מ` : `±${acc}מ'`;
+        applyPositionGraphic(lon, lat, acc, isFinal && goTo);
+        if (isFinal) setStatus(`📍 מיקום עודכן · דיוק ${lbl}`, "ok");
+        else         setStatus(`📡 מאתר... דיוק ${lbl} — ממתין לשיפור`);
+      }
+
+      // Hard deadline: if device cannot reach ≤50 m accuracy in 20 s, take best seen
+      const deadline = setTimeout(() => {
+        if (settled) return;
+        if (bestPos) accept(bestPos, true);
+        else { settled = true; setStatus("לא נמצא מיקום","error"); }
+      }, 20000);
+
+      locWatchId = navigator.geolocation.watchPosition(
         pos => {
-          const lon = pos.coords.longitude, lat = pos.coords.latitude;
-          const acc = Math.round(pos.coords.accuracy);
-          locationLayer.removeAll();
-          // accuracy circle (shown only when radius > 20 m to avoid clutter)
-          if (acc > 20) {
-            locationLayer.add(new Graphic({
-              geometry: makeAccuracyCircle(lon, lat, acc),
-              symbol: ACC_CIRCLE_SYM,
-            }));
+          if (settled) return;
+          // Keep the reading only if it is more accurate than what we've seen
+          if (!bestPos || pos.coords.accuracy < bestPos.coords.accuracy) {
+            bestPos = pos;
+            accept(pos, false); // live update, not yet final
           }
-          locationLayer.add(new Graphic({
-            geometry: new Point({ longitude: lon, latitude: lat, spatialReference: SR_WGS84 }),
-            symbol: MY_LOC_SYM,
-          }));
-          const accLabel = acc >= 1000 ? `±${(acc/1000).toFixed(1)}ק"מ` : `±${acc}מ'`;
-          setStatus(`📍 מיקום עודכן · דיוק ${accLabel}`, "ok");
-          if (goTo) {
-            if (is3D) {
-              view.goTo({ position: { longitude: lon, latitude: lat, z: 5000 }, tilt: 55, heading: 0 }, { duration: 1200 });
-            } else {
-              view.goTo({ center: [lon, lat], zoom: 15 }, { duration: 1000 });
-            }
-          }
+          // Early exit: accuracy is good enough — no need to wait for the deadline
+          if (pos.coords.accuracy <= 50) { clearTimeout(deadline); accept(pos, true); }
         },
         err => {
+          clearTimeout(deadline);
+          if (settled) return;
+          settled = true;
+          if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
           const msg = err.code === 1 ? "הרשאת מיקום נדחתה" : err.code === 2 ? "מיקום לא זמין" : "תם הזמן לאיתור";
           setStatus("שגיאת מיקום: " + msg, "error");
           stopLocationTracking();
         },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 }
       );
     }
 
@@ -1038,6 +1109,7 @@
       locationActive = false;
       document.getElementById("btnMyLocation").classList.remove("active");
       if (locationIntervalId) { clearInterval(locationIntervalId); locationIntervalId = null; }
+      if (locWatchId !== null) { navigator.geolocation.clearWatch(locWatchId); locWatchId = null; }
       locationLayer.removeAll();
     }
 
@@ -1445,6 +1517,179 @@
       setStatus("קורא קובץ...");
       try { await loadGeoJSON(JSON.parse(await file.text())); }
       catch(e){ setStatus("שגיאה: "+e.message,"error"); }
+    };
+
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // ██  TERRAIN ELEVATION ANALYSIS — Tactical Height Advantage Component  ██
+    // ═══════════════════════════════════════════════════════════════════════════════
+    //
+    // PURPOSE:
+    //   Visualise relative terrain elevation around the soldier's current GPS position
+    //   for quick tactical situational awareness:
+    //
+    //     RED   areas → terrain HIGHER than soldier.
+    //           An enemy force positioned there looks down on you — they have
+    //           line-of-sight / firing dominance.  Avoid or neutralise first.
+    //
+    //     BLUE  areas → terrain LOWER than soldier.
+    //           You have height advantage over any force there — better visibility,
+    //           longer range, and superior ballistic performance.
+    //
+    // ALGORITHM:
+    //   1. Use the soldier's current GPS position as the elevation reference point.
+    //   2. Generate a TERRAIN_GRID × TERRAIN_GRID sample grid that spans
+    //      ±TERRAIN_RADIUS_M metres from the reference in all directions.
+    //   3. Pack all sample points into a single Polyline and call
+    //      map.ground.queryElevation() — one network request for all ~500 elevations.
+    //   4. For each grid cell compute  ΔZ = Z_cell − Z_soldier  (metres).
+    //   5. Render a filled rectangle polygon per cell; fill colour = f(ΔZ):
+    //
+    //         ΔZ > +50 m  →  dark red     (strong tactical disadvantage)
+    //         ΔZ > +20 m  →  red
+    //         ΔZ >  +5 m  →  orange-red   (slight disadvantage)
+    //        |ΔZ| ≤  5 m  →  transparent  (neutral ground — not rendered)
+    //         ΔZ <  −5 m  →  light blue   (slight advantage)
+    //         ΔZ < −20 m  →  blue
+    //         ΔZ < −50 m  →  dark blue    (strong tactical advantage)
+    //
+    // PARAMETERS — tweak these two constants to change analysis scope / resolution:
+    //   TERRAIN_RADIUS_M  radius of the analysed area around the soldier [metres]
+    //   TERRAIN_GRID      NxN grid density  (higher = finer grid, more server calls)
+    //
+    // DEPENDENCIES (all already loaded via require() at top of file):
+    //   map.ground  →  ArcGIS WorldElevation3D service (queryElevation method)
+    //   Polygon, Polyline, Graphic, GraphicsLayer, SR_WGS84
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    const TERRAIN_RADIUS_M = 2000; // analyse a 4 km × 4 km area (±2 km from soldier)
+    const TERRAIN_GRID     = 22;   // 22×22 = 484 cells ≈ 182 m per cell side
+
+    let terrainActive = false;
+
+    // GraphicsLayer that holds the coloured elevation cells.
+    // listMode:"hide" keeps it out of any layer-list widget.
+    const terrainLayer = new GraphicsLayer({ title: "_terrain", listMode: "hide" });
+    map.add(terrainLayer);
+
+    // ── Colour scale: elevation delta [metres] → [R, G, B, alpha_0-1] ────────────
+    // Opacity < 1 so the underlying satellite/terrain imagery shows through.
+    function terrainCellColor(dz) {
+      if (dz >  50) return [139,   0,   0, 0.78]; // dark red   – very strong threat
+      if (dz >  20) return [220,  53,  69, 0.68]; // red        – clear disadvantage
+      if (dz >   5) return [255, 140,   0, 0.50]; // orange     – slight disadvantage
+      if (dz >= -5) return [  0,   0,   0, 0.00]; // neutral    – transparent (skip)
+      if (dz >= -20) return [135, 206, 235, 0.50]; // light blue – slight advantage
+      if (dz >= -50) return [ 30, 144, 255, 0.68]; // blue       – clear advantage
+      return              [  0,   0, 139, 0.78];   // dark blue  – very strong advantage
+    }
+
+    // ── Main analysis function ────────────────────────────────────────────────────
+    async function runTerrainAnalysis() {
+      // Guard: we need a confirmed GPS fix before we can relativise elevations
+      if (!lastLocationPos) {
+        setStatus("יש להפעיל מיקום עצמי תחילה ולהמתין לקליטה", "error");
+        stopTerrainAnalysis(); return;
+      }
+      const { lon, lat } = lastLocationPos;
+      setStatus("⛰ מנתח גובה שטח...");
+      terrainLayer.removeAll();
+
+      try {
+        // ── Step 1: Build the flat sample-point list ──────────────────────────────
+        // Convert analysis radius from metres into geographic degrees.
+        // cos(lat) accounts for longitude meridian convergence at non-equator latitudes.
+        const latRad    = lat * Math.PI / 180;
+        const cellSizeM = (TERRAIN_RADIUS_M * 2) / TERRAIN_GRID; // metres per cell
+        const dLat      = cellSizeM / 111320;                     // degrees per cell (N-S)
+        const dLon      = cellSizeM / (111320 * Math.cos(latRad));// degrees per cell (E-W)
+        const half      = TERRAIN_GRID / 2;
+
+        // Index 0 = soldier's own position (elevation reference).
+        // Indices 1…N² = the grid sample points.
+        const samplePts = [[lon, lat]];
+        for (let row = 0; row < TERRAIN_GRID; row++) {
+          for (let col = 0; col < TERRAIN_GRID; col++) {
+            samplePts.push([
+              lon + (col - half + 0.5) * dLon,
+              lat + (row - half + 0.5) * dLat,
+            ]);
+          }
+        }
+
+        // ── Step 2: Single elevation query for all points ─────────────────────────
+        // Encoding all points as one Polyline lets queryElevation fetch every Z value
+        // in a single server round-trip instead of N² individual requests.
+        // demResolution:"finest-contiguous" requests the highest-resolution DEM tile
+        // that covers the entire polyline without gaps.
+        const result = await map.ground.queryElevation(
+          new Polyline({ paths: [samplePts], spatialReference: SR_WGS84 }),
+          { demResolution: "finest-contiguous" }
+        );
+
+        // Returned geometry is the same Polyline with Z added to every vertex.
+        const zVals = result.geometry.paths[0]; // [[lon, lat, z], …]
+        const refZ  = zVals[0][2];              // soldier's elevation in metres ASL
+
+        // ── Step 3: Render coloured cell polygons ─────────────────────────────────
+        for (let row = 0; row < TERRAIN_GRID; row++) {
+          for (let col = 0; col < TERRAIN_GRID; col++) {
+            // Vertex index: offset by 1 because index 0 is the soldier reference point
+            const idx  = 1 + row * TERRAIN_GRID + col;
+            const dz   = zVals[idx][2] - refZ; // positive = higher than soldier
+            const rgba = terrainCellColor(dz);
+
+            // Skip neutral cells entirely — avoids rendering hundreds of white quads
+            if (rgba[3] === 0) continue;
+
+            // Rectangle centred on the sample point; edges touch adjacent cells
+            const cLon = lon + (col - half + 0.5) * dLon;
+            const cLat = lat + (row - half + 0.5) * dLat;
+            terrainLayer.add(new Graphic({
+              geometry: new Polygon({
+                rings: [[
+                  [cLon - dLon * 0.5, cLat - dLat * 0.5],
+                  [cLon + dLon * 0.5, cLat - dLat * 0.5],
+                  [cLon + dLon * 0.5, cLat + dLat * 0.5],
+                  [cLon - dLon * 0.5, cLat + dLat * 0.5],
+                  [cLon - dLon * 0.5, cLat - dLat * 0.5], // close ring
+                ]],
+                spatialReference: SR_WGS84,
+              }),
+              symbol: {
+                type   : "simple-fill",
+                color  : rgba,          // [R, G, B, alpha]
+                outline: { width: 0 },  // no borders between cells for cleaner look
+              },
+            }));
+          }
+        }
+
+        setStatus(`⛰ ניתוח הושלם · גובה עצמי ${Math.round(refZ)} מ' מעל פני הים`, "ok");
+
+      } catch (err) {
+        setStatus("שגיאה בניתוח גובה: " + err.message, "error");
+        stopTerrainAnalysis();
+      }
+    }
+
+    function startTerrainAnalysis() {
+      terrainActive = true;
+      document.getElementById("btnTerrain").classList.add("active");
+      document.getElementById("terrainLegend").style.display = "";
+      runTerrainAnalysis();
+    }
+
+    function stopTerrainAnalysis() {
+      terrainActive = false;
+      document.getElementById("btnTerrain").classList.remove("active");
+      document.getElementById("terrainLegend").style.display = "none";
+      terrainLayer.removeAll();
+    }
+
+    document.getElementById("btnTerrain").onclick = () => {
+      if (terrainActive) stopTerrainAnalysis();
+      else startTerrainAnalysis();
     };
 
   }); // end require
