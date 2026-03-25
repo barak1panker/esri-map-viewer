@@ -434,8 +434,13 @@
           type: "mesh-3d",
           symbolLayers: [{
             type: "fill",
-            material: { color: [210, 200, 185, 1], colorMixMode: "replace" },
-            edges: { type: "solid", color: [100, 95, 85, 0.7], size: 0.5 }
+            // Warm off-white: matches the light-coloured concrete/plaster common in Israel.
+            // colorMixMode "replace" ignores the texture atlas and applies this flat colour,
+            // which performs better and looks cleaner at city scale.
+            material: { color: [225, 218, 205, 1], colorMixMode: "replace" },
+            // Slightly stronger edges make building outlines pop against the lit faces,
+            // especially useful when shadows are enabled (directShadowsEnabled).
+            edges: { type: "solid", color: [80, 75, 65, 0.8], size: 0.75 },
           }]
         }
       }
@@ -512,9 +517,19 @@
       sceneView3D.ui.add(new Home({ view: sceneView3D }),              "top-left");
       sceneView3D.ui.add(new NavigationToggle({ view: sceneView3D }), "top-left");
       // Atmosphere & lighting (set after ready, not in constructor)
+      // directShadowsEnabled = true: buildings cast realistic sun shadows — biggest
+      // single visual improvement for urban areas like Tel Aviv.
+      // Sun fixed at ~10:00 Israel time (good angle for east-facing building facades).
+      // cameraTrackingEnabled = false: shadows stay consistent as you orbit the city.
+      const sunTime = new Date();
+      sunTime.setUTCHours(8, 0, 0, 0); // 08:00 UTC ≈ 10:00–11:00 Israel time
       sceneView3D.environment = {
         atmosphere: { quality: "high" },
-        lighting:   { date: new Date(), cameraTrackingEnabled: true },
+        lighting: {
+          date: sunTime,
+          directShadowsEnabled: true,
+          cameraTrackingEnabled: false,
+        },
       };
     });
 
